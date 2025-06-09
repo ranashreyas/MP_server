@@ -25,15 +25,20 @@ pip install -r requirements.txt
 
 2. **Create/Select Project**: Create a new project or select an existing one
 
-3. **Enable Gmail API**:
+3. **Enable APIs**:
    - Go to "APIs & Services" > "Library"
-   - Search for "Gmail API"
-   - Click "Enable"
+   - Search for "Gmail API" and click "Enable"
+   - Search for "Calendar API" and click "Enable"
 
 4. **Create Credentials**:
    - Go to "APIs & Services" > "Credentials"
    - Click "Create Credentials" > "OAuth 2.0 Client IDs"
    - Choose "Desktop application"
+   - **Important**: In the "Authorized redirect URIs" section, add these URIs:
+     ```
+     http://localhost:8080/
+     http://localhost:8081/
+     ```
    - Download the JSON file and rename it to `credentials.json`
 
 5. **Place Credentials**: Put the `credentials.json` file in the same directory as `gmail_server.py`
