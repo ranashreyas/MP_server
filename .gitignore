@@ -5,6 +5,7 @@ credentials*.json
 
 # Python cache
 __pycache__/
+clients/__pycache__/
 *.py[cod]
 *$py.class
 
