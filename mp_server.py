@@ -3,6 +3,11 @@ import sys
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
+import base64
+import json
+from pathlib import Path
+from urllib.parse import urlencode
+
 # Add the script directory to Python path for reliable imports
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -13,33 +18,44 @@ from mcp.server.fastmcp import FastMCP
 # Import our custom clients
 from clients.gmail_client import GmailClient
 from clients.calendar_client import CalendarClient
+from clients.notion_client import NotionClient
 
 # Get the directory where this script is located
 CREDENTIALS_GMAIL_PATH = os.path.join(SCRIPT_DIR, 'credentials.json')
 CREDENTIALS_CALENDAR_PATH = os.path.join(SCRIPT_DIR, 'credentials.json')
+CREDENTIALS_NOTION_PATH = os.path.join(SCRIPT_DIR, 'credentials_notion.json')
+
 TOKEN_GMAIL_PATH = os.path.join(SCRIPT_DIR, 'token_gmail.pickle')
 TOKEN_CALENDAR_PATH = os.path.join(SCRIPT_DIR, 'token_calendar.pickle')
+TOKEN_NOTION_PATH = os.path.join(SCRIPT_DIR, "token_notion.pickle")
+
 
 mcp = FastMCP("MP_Server")
 
 # Initialize clients
 gmail_client = None
 calendar_client = None
+notion_client = None
 
 def get_clients():
-    global gmail_client, calendar_client
+    global gmail_client, calendar_client, notion_client
     if gmail_client is None:
         gmail_client = GmailClient(CREDENTIALS_GMAIL_PATH, TOKEN_GMAIL_PATH)
         calendar_client = CalendarClient(CREDENTIALS_CALENDAR_PATH, TOKEN_CALENDAR_PATH)
-    return gmail_client, calendar_client
+        notion_client = NotionClient(TOKEN_NOTION_PATH)
+    return gmail_client, calendar_client, notion_client
 
 def get_gmail_client():
-    gmail, _ = get_clients()
+    gmail, _, _= get_clients()
     return gmail
 
 def get_calendar_client():
-    _, calendar = get_clients()
+    _, calendar, _ = get_clients()
     return calendar
+
+def get_notion_client():
+    _, _, notion = get_clients()
+    return notion
 
 @mcp.tool()
 def debug_paths() -> Dict[str, Any]:
@@ -575,6 +591,105 @@ def get_weekly_calendar_summary(calendar_id: str = 'primary') -> Dict[str, Any]:
             'daily_breakdown': daily_events,
             'busiest_day': max(daily_events.keys(), key=lambda k: len(daily_events[k])) if daily_events else None
         }
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def get_notion_top_level_pages(max_results: int = 100) -> Dict[str, Any]:
+    """Get all top-level pages from Notion workspace."""
+    try:
+        client = get_notion_client()
+        result = client.get_all_pages(top_level_only=True, page_size=max_results)
+        
+        if result["success"]:
+            return {
+                'total_pages': result["total_pages"],
+                'pages': [
+                    {
+                        'id': page['id'],
+                        'title': page['title'],
+                        'url': page['url'],
+                        'created_time': page['created_time'],
+                        'last_edited_time': page['last_edited_time'],
+                        'created_by': page['created_by'],
+                        'last_edited_by': page['last_edited_by'],
+                        'archived': page['archived']
+                    }
+                    for page in result["pages"]
+                ]
+            }
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+    
+@mcp.tool()
+def get_notion_all_pages(max_results: int = 100) -> Dict[str, Any]:
+    """Get all pages from Notion workspace."""
+    try:
+        client = get_notion_client()
+        result = client.get_all_pages(top_level_only=False, page_size=max_results)
+        
+        if result["success"]:
+            return {
+                'total_pages': result["total_pages"],
+                'pages': [
+                    {
+                        'id': page['id'],
+                        'title': page['title'],
+                        'url': page['url'],
+                        'created_time': page['created_time'],
+                        'last_edited_time': page['last_edited_time'],
+                        'created_by': page['created_by'],
+                        'last_edited_by': page['last_edited_by'],
+                        'archived': page['archived']
+                    }
+                    for page in result["pages"]
+                ]
+            }
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def create_notion_page(title: str = None, parent_page_title: str = None, body_content: str = None) -> Dict[str, Any]:
+    """Create a new page in Notion.
+    
+    Args:
+        title: Page title (defaults to "New Page" if not provided)
+        parent_page_title: Title of parent page (creates top-level page if not provided or not found)
+        body_content: Page body content (blank if not provided, supports multiple paragraphs separated by double newlines)
+    """
+    try:
+        client = get_notion_client()
+        result = client.create_page(title=title, parent_page_title=parent_page_title, body_content=body_content)
+        
+        if result["success"]:
+            response = {
+                'success': True,
+                'page_id': result["page_id"],
+                'title': result["title"],
+                'url': result["url"],
+                'created_time': result["created_time"],
+                'parent_type': result["parent_type"]
+            }
+            
+            # Add parent information to response
+            if parent_page_title:
+                if result["parent_found"]:
+                    response['parent_status'] = f"Created as child of '{parent_page_title}'"
+                else:
+                    response['parent_status'] = f"Parent page '{parent_page_title}' not found - created as top-level page"
+            else:
+                response['parent_status'] = "Created as top-level page"
+            
+            return response
+        else:
+            return {'error': result["error"]}
+            
     except Exception as e:
         return {'error': str(e)}
 
