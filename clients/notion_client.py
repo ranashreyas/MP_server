@@ -8,14 +8,11 @@ import sys
 import base64
 import json
 import pickle
-from pathlib import Path
-from urllib.parse import urlencode
 import webbrowser
 import threading
 import time
 import logging
 
-from dotenv import load_dotenv
 from flask import Flask, redirect, request, url_for
 from notion_client import Client
 
@@ -188,7 +185,6 @@ class NotionClient:
         # The server will run in the background until OAuth completes
     
     def get_all_pages(self, top_level_only: bool = False, page_size: int = 100):
-        """Retrieve top-level pages from Notion workspace."""
         if not self.user_data or 'access_token' not in self.user_data:
             raise Exception("Not authenticated. Please complete OAuth flow first.")
         
@@ -475,6 +471,93 @@ class NotionClient:
                     }
                 }
                 
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def get_pages_content(self, page_ids: list[str]):
+        """Get content of multiple pages by their IDs.
+        
+        Args:
+            page_ids: List of page IDs to fetch content for
+            
+        Returns:
+            Dictionary containing success status and page contents
+        """
+        if not self.user_data or 'access_token' not in self.user_data:
+            raise Exception("Not authenticated. Please complete OAuth flow first.")
+        
+        try:
+            client = Client(auth=self.user_data["access_token"], notion_version=self.NOTION_API_VERSION)
+            
+            pages_content = []
+            for page_id in page_ids:
+                try:
+                    # Get page metadata
+                    page = client.pages.retrieve(page_id=page_id)
+                    
+                    # Get page blocks (content)
+                    blocks = client.blocks.children.list(block_id=page_id)
+                    
+                    # Extract text content from blocks
+                    content = []
+                    for block in blocks.get("results", []):
+                        block_type = block.get("type")
+                        if block_type == "paragraph":
+                            text = "".join([text.get("plain_text", "") for text in block.get("paragraph", {}).get("rich_text", [])])
+                            if text:
+                                content.append(text)
+                        elif block_type == "heading_1":
+                            text = "".join([text.get("plain_text", "") for text in block.get("heading_1", {}).get("rich_text", [])])
+                            if text:
+                                content.append(f"# {text}")
+                        elif block_type == "heading_2":
+                            text = "".join([text.get("plain_text", "") for text in block.get("heading_2", {}).get("rich_text", [])])
+                            if text:
+                                content.append(f"## {text}")
+                        elif block_type == "heading_3":
+                            text = "".join([text.get("plain_text", "") for text in block.get("heading_3", {}).get("rich_text", [])])
+                            if text:
+                                content.append(f"### {text}")
+                        elif block_type == "bulleted_list_item":
+                            text = "".join([text.get("plain_text", "") for text in block.get("bulleted_list_item", {}).get("rich_text", [])])
+                            if text:
+                                content.append(f"• {text}")
+                        elif block_type == "numbered_list_item":
+                            text = "".join([text.get("plain_text", "") for text in block.get("numbered_list_item", {}).get("rich_text", [])])
+                            if text:
+                                content.append(f"1. {text}")
+                        elif block_type == "to_do":
+                            text = "".join([text.get("plain_text", "") for text in block.get("to_do", {}).get("rich_text", [])])
+                            checked = block.get("to_do", {}).get("checked", False)
+                            if text:
+                                content.append(f"[{'x' if checked else ' '}] {text}")
+                        elif block_type == "quote":
+                            text = "".join([text.get("plain_text", "") for text in block.get("quote", {}).get("rich_text", [])])
+                            if text:
+                                content.append(f"> {text}")
+                    
+                    pages_content.append({
+                        "id": page_id,
+                        "title": self._extract_page_title(page),
+                        "url": page.get("url"),
+                        "content": "\n".join(content),
+                        "last_edited_time": page.get("last_edited_time")
+                    })
+                    
+                except Exception as e:
+                    pages_content.append({
+                        "id": page_id,
+                        "error": str(e)
+                    })
+            
+            return {
+                "success": True,
+                "pages": pages_content
+            }
+            
         except Exception as e:
             return {
                 "success": False,

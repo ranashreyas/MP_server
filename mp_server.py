@@ -594,42 +594,18 @@ def get_weekly_calendar_summary(calendar_id: str = 'primary') -> Dict[str, Any]:
     except Exception as e:
         return {'error': str(e)}
 
-@mcp.tool()
-def get_notion_top_level_pages(max_results: int = 100) -> Dict[str, Any]:
-    """Get all top-level pages from Notion workspace."""
-    try:
-        client = get_notion_client()
-        result = client.get_all_pages(top_level_only=True, page_size=max_results)
-        
-        if result["success"]:
-            return {
-                'total_pages': result["total_pages"],
-                'pages': [
-                    {
-                        'id': page['id'],
-                        'title': page['title'],
-                        'url': page['url'],
-                        'created_time': page['created_time'],
-                        'last_edited_time': page['last_edited_time'],
-                        'created_by': page['created_by'],
-                        'last_edited_by': page['last_edited_by'],
-                        'archived': page['archived']
-                    }
-                    for page in result["pages"]
-                ]
-            }
-        else:
-            return {'error': result["error"]}
-            
-    except Exception as e:
-        return {'error': str(e)}
     
 @mcp.tool()
-def get_notion_all_pages(max_results: int = 100) -> Dict[str, Any]:
-    """Get all pages from Notion workspace."""
+def get_notion_pages(top_level_only: bool = False, max_results: int = 100) -> Dict[str, Any]:
+    """Get all pages from Notion workspace.
+    
+    Args:
+        top_level_only: If True, only return top-level pages (default: False)
+        max_results: Maximum number of pages to return (default: 100)
+    """
     try:
         client = get_notion_client()
-        result = client.get_all_pages(top_level_only=False, page_size=max_results)
+        result = client.get_all_pages(top_level_only=top_level_only, page_size=max_results)
         
         if result["success"]:
             return {
@@ -756,6 +732,31 @@ def update_notion_page(page_id: str, new_title: str = None, new_content: str = N
                 response['note'] = result["message"]
             
             return response
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def get_notion_pages_content(page_ids: List[str]) -> Dict[str, Any]:
+    """Get content of multiple Notion pages by their IDs.
+    
+    Args:
+        page_ids: List of 1 or more page IDs to fetch content for. If you are not given the page id (user gives title of page to update), you need to find the page id first.
+        
+    Returns:
+        Dictionary containing page contents with their titles and URLs
+    """
+    try:
+        client = get_notion_client()
+        result = client.get_pages_content(page_ids=page_ids)
+        
+        if result["success"]:
+            return {
+                'total_pages': len(result["pages"]),
+                'pages': result["pages"]
+            }
         else:
             return {'error': result["error"]}
             

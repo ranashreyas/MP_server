@@ -6,4 +6,6 @@ google-api-python-client
 python-dateutil
 email-validator
 fastmcp
-pytz 
+pytz
+flask
+notion-client
