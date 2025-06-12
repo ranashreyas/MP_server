@@ -370,3 +370,113 @@ class NotionClient:
                 "success": False,
                 "error": str(e)
             }
+
+    def update_page(self, page_id: str, new_title: str = None, new_content: str = None, append_content: bool = False):
+        """Update an existing page in Notion.
+        
+        Args:
+            page_id: Page ID to update
+            new_title: New title for the page (optional)
+            new_content: New content for the page (optional)
+            append_content: If True, append content; if False, replace existing content
+        """
+        if not self.user_data or 'access_token' not in self.user_data:
+            raise Exception("Not authenticated. Please complete OAuth flow first.")
+        
+        try:
+            client = Client(auth=self.user_data["access_token"], notion_version=self.NOTION_API_VERSION)
+            
+            # Update title if provided
+            if new_title:
+                try:
+                    client.pages.update(
+                        page_id=page_id,
+                        properties={
+                            "title": {
+                                "title": [
+                                    {
+                                        "type": "text",
+                                        "text": {"content": new_title}
+                                    }
+                                ]
+                            }
+                        }
+                    )
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": f"Failed to update title: {str(e)}"
+                    }
+            
+            # Update content if provided
+            if new_content:
+                try:
+                    # If replacing content, first get and delete existing blocks
+                    if not append_content:
+                        existing_blocks = client.blocks.children.list(block_id=page_id)
+                        for block in existing_blocks.get("results", []):
+                            try:
+                                client.blocks.delete(block_id=block["id"])
+                            except:
+                                pass  # Some blocks might not be deletable
+                    
+                    # Prepare new content blocks
+                    new_blocks = []
+                    paragraphs = new_content.split('\n\n')
+                    for paragraph in paragraphs:
+                        if paragraph.strip():
+                            new_blocks.append({
+                                "object": "block",
+                                "type": "paragraph",
+                                "paragraph": {
+                                    "rich_text": [
+                                        {
+                                            "type": "text",
+                                            "text": {"content": paragraph.strip()}
+                                        }
+                                    ]
+                                }
+                            })
+                    
+                    # Add new blocks
+                    if new_blocks:
+                        client.blocks.children.append(block_id=page_id, children=new_blocks)
+                        
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": f"Failed to update content: {str(e)}"
+                    }
+            
+            # Get updated page info
+            try:
+                updated_page = client.pages.retrieve(page_id=page_id)
+                return {
+                    "success": True,
+                    "page_id": page_id,
+                    "title": self._extract_page_title(updated_page),
+                    "url": updated_page.get("url"),
+                    "last_edited_time": updated_page.get("last_edited_time"),
+                    "updates_applied": {
+                        "title_updated": new_title is not None,
+                        "content_updated": new_content is not None,
+                        "content_action": "appended" if append_content else "replaced"
+                    }
+                }
+            except Exception as e:
+                return {
+                    "success": True,  # Update likely succeeded even if we can't retrieve
+                    "page_id": page_id,
+                    "message": "Page updated but couldn't retrieve updated info",
+                    "updates_applied": {
+                        "title_updated": new_title is not None,
+                        "content_updated": new_content is not None,
+                        "content_action": "appended" if append_content else "replaced"
+                    }
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }

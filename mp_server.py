@@ -662,9 +662,25 @@ def create_notion_page(title: str = None, parent_page_title: str = None, body_co
         title: Page title (defaults to "New Page" if not provided)
         parent_page_title: Title of parent page (creates top-level page if not provided or not found)
         body_content: Page body content (blank if not provided, supports multiple paragraphs separated by double newlines)
+            When Adding body text, use the following Markdown rules Notion uses as appropriate to style the text:
+
+                Type ** on both sides of your text to bold.
+                Type * on both sides of your text to italicize.
+                Type ` on both sides of your text to create inline code.
+                Type ~ on both sides of your text to strikethrough.
+
+                Type *, -, or + followed by space to create a bulleted list.
+                Type [] to create a to-do checkbox, followed by space. (There's no space in between.)
+                Type 1., a., or i. followed by space to create a numbered list.
+                Type # followed by space to create an H1 heading.
+                Type ## followed by space to create an H2 sub-heading.
+                Type ### followed by space to create an H3 sub-heading.
+                Type > followed by space to create a toggle list.
+                Type " followed by space to create a quote block.
     """
     try:
         client = get_notion_client()
+        body_content = body_content.replace("[ ]", "[]")
         result = client.create_page(title=title, parent_page_title=parent_page_title, body_content=body_content)
         
         if result["success"]:
@@ -685,6 +701,59 @@ def create_notion_page(title: str = None, parent_page_title: str = None, body_co
                     response['parent_status'] = f"Parent page '{parent_page_title}' not found - created as top-level page"
             else:
                 response['parent_status'] = "Created as top-level page"
+            
+            return response
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def update_notion_page(page_id: str, new_title: str = None, new_content: str = None, append_content: bool = False) -> Dict[str, Any]:
+    """Update an existing page in Notion.
+    
+    Args:
+        page_id: Page ID to update (e.g., "12345678-1234-1234-1234-123456789012") If you are not given the page id (user gives title of page to update), you need to find the page id first.
+        new_title: New title for the page (optional)
+        new_content: New content for the page (optional, supports multiple paragraphs separated by double newlines)
+        append_content: If True, append new content to existing; if False, replace all content (default: False)
+    """
+    try:
+        client = get_notion_client()
+        new_content = new_content.replace("[ ]", "[]")
+        result = client.update_page(
+            page_id=page_id,
+            new_title=new_title,
+            new_content=new_content,
+            append_content=append_content
+        )
+        
+        if result["success"]:
+            response = {
+                'success': True,
+                'page_id': result["page_id"],
+                'title': result.get("title"),
+                'url': result.get("url"),
+                'last_edited_time': result.get("last_edited_time"),
+                'updates_applied': result["updates_applied"]
+            }
+            
+            # Add informative message about what was updated
+            updates = []
+            if result["updates_applied"]["title_updated"]:
+                updates.append(f"title changed to '{new_title}'")
+            if result["updates_applied"]["content_updated"]:
+                action = result["updates_applied"]["content_action"]
+                updates.append(f"content {action}")
+            
+            if updates:
+                response['update_summary'] = f"Successfully updated: {', '.join(updates)}"
+            else:
+                response['update_summary'] = "No changes were made (no title or content provided)"
+            
+            if "message" in result:
+                response['note'] = result["message"]
             
             return response
         else:
