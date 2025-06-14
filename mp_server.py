@@ -19,15 +19,18 @@ from mcp.server.fastmcp import FastMCP
 from clients.gmail_client import GmailClient
 from clients.calendar_client import CalendarClient
 from clients.notion_client import NotionClient
+from clients.drive_client import DriveClient
 
 # Get the directory where this script is located
 CREDENTIALS_GMAIL_PATH = os.path.join(SCRIPT_DIR, 'credentials.json')
 CREDENTIALS_CALENDAR_PATH = os.path.join(SCRIPT_DIR, 'credentials.json')
+CREDENTIALS_DRIVE_PATH = os.path.join(SCRIPT_DIR, 'credentials.json')
 CREDENTIALS_NOTION_PATH = os.path.join(SCRIPT_DIR, 'credentials_notion.json')
 
 TOKEN_GMAIL_PATH = os.path.join(SCRIPT_DIR, 'token_gmail.pickle')
 TOKEN_CALENDAR_PATH = os.path.join(SCRIPT_DIR, 'token_calendar.pickle')
 TOKEN_NOTION_PATH = os.path.join(SCRIPT_DIR, "token_notion.pickle")
+TOKEN_DRIVE_PATH = os.path.join(SCRIPT_DIR, "token_drive.pickle")
 
 
 mcp = FastMCP("MP_Server")
@@ -36,26 +39,32 @@ mcp = FastMCP("MP_Server")
 gmail_client = None
 calendar_client = None
 notion_client = None
+drive_client = None
 
 def get_clients():
-    global gmail_client, calendar_client, notion_client
+    global gmail_client, calendar_client, notion_client, drive_client
     if gmail_client is None:
         gmail_client = GmailClient(CREDENTIALS_GMAIL_PATH, TOKEN_GMAIL_PATH)
         calendar_client = CalendarClient(CREDENTIALS_CALENDAR_PATH, TOKEN_CALENDAR_PATH)
         notion_client = NotionClient(TOKEN_NOTION_PATH)
-    return gmail_client, calendar_client, notion_client
+        drive_client = DriveClient(CREDENTIALS_DRIVE_PATH, TOKEN_DRIVE_PATH)
+    return gmail_client, calendar_client, notion_client, drive_client
 
 def get_gmail_client():
-    gmail, _, _= get_clients()
+    gmail, _, _, _ = get_clients()
     return gmail
 
 def get_calendar_client():
-    _, calendar, _ = get_clients()
+    _, calendar, _, _ = get_clients()
     return calendar
 
 def get_notion_client():
-    _, _, notion = get_clients()
+    _, _, notion, _ = get_clients()
     return notion
+
+def get_drive_client():
+    _, _, _, drive = get_clients()
+    return drive
 
 @mcp.tool()
 def debug_paths() -> Dict[str, Any]:
@@ -756,6 +765,266 @@ def get_notion_pages_content(page_ids: List[str]) -> Dict[str, Any]:
             return {
                 'total_pages': len(result["pages"]),
                 'pages': result["pages"]
+            }
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def list_drive_files(query: str = None, max_results: int = 100) -> Dict[str, Any]:
+    """List files in Google Drive.
+    
+    Args:
+        query: Optional search query (e.g., "name contains 'report'")
+        max_results: Maximum number of files to return
+        
+    Returns:
+        Dict containing:
+        - total_files (int): Total number of files found
+        - files (List[Dict]): List of file objects, each containing:
+            - id (str): Unique file identifier
+            - name (str): File name
+            - type (str): MIME type of the file
+            - size (str): File size in bytes
+            - created_time (str): ISO timestamp of creation
+            - modified_time (str): ISO timestamp of last modification
+            - owners (List[str]): List of owner email addresses
+            - shared (bool): Whether the file is shared
+            - url (str): Web view URL for the file
+            - last_modified_by (str): Email of last user to modify
+            - editors (List[str]): List of all users who have edited the file
+    """
+    try:
+        client = get_drive_client()
+        result = client.list_files(query=query, page_size=max_results)
+        
+        if result["success"]:
+            return {
+                'total_files': result["total_files"],
+                'files': result["files"]
+            }
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def search_drive_files(query: str, max_results: int = 100) -> Dict[str, Any]:
+    """Search for files in Google Drive.
+    
+    Args:
+        query: Search query (e.g., "report" or "meeting notes")
+        max_results: Maximum number of files to return
+        
+    Returns:
+        Dict containing:
+        - query (str): The search query used
+        - total_files (int): Total number of matching files
+        - files (List[Dict]): List of matching file objects, each containing:
+            - id (str): Unique file identifier
+            - name (str): File name
+            - type (str): MIME type of the file
+            - size (str): File size in bytes
+            - created_time (str): ISO timestamp of creation
+            - modified_time (str): ISO timestamp of last modification
+            - owners (List[str]): List of owner email addresses
+            - shared (bool): Whether the file is shared
+            - url (str): Web view URL for the file
+            - last_modified_by (str): Email of last user to modify
+            - editors (List[str]): List of all users who have edited the file
+    """
+    try:
+        client = get_drive_client()
+        result = client.search_files(query=query, page_size=max_results)
+        
+        if result["success"]:
+            return {
+                'query': result["query"],
+                'total_files': result["total_files"],
+                'files': result["files"]
+            }
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def download_drive_file(file_id: str, output_path: str) -> Dict[str, Any]:
+    """Download a file from Google Drive.
+    
+    Args:
+        file_id: ID of the file to download
+        output_path: Path where the file should be saved
+        
+    Returns:
+        Dict containing file information:
+        - id (str): Unique file identifier
+        - name (str): File name
+        - type (str): MIME type of the file
+        - size (str): File size in bytes
+        - saved_to (str): Local path where file was saved
+        - last_modified_by (str): Email of last user to modify
+        - editors (List[str]): List of all users who have edited the file
+    """
+    try:
+        client = get_drive_client()
+        result = client.download_file(file_id=file_id, output_path=output_path)
+        
+        if result["success"]:
+            return result["file"]
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def get_drive_file_metadata(file_id: str) -> Dict[str, Any]:
+    """Get detailed metadata for a specific file in Google Drive.
+    
+    Args:
+        file_id: ID of the file to get metadata for
+        
+    Returns:
+        Dict containing detailed file information:
+        - id (str): Unique file identifier
+        - name (str): File name
+        - type (str): MIME type of the file
+        - size (str): File size in bytes
+        - created_time (str): ISO timestamp of creation
+        - modified_time (str): ISO timestamp of last modification
+        - owners (List[str]): List of owner email addresses
+        - shared (bool): Whether the file is shared
+        - url (str): Web view URL for the file
+        - description (str): File description if available
+        - capabilities (Dict): Available operations on the file
+        - last_modified_by (str): Email of last user to modify
+        - editors (List[str]): List of all users who have edited the file
+    """
+    try:
+        client = get_drive_client()
+        result = client.get_file_metadata(file_id=file_id)
+        
+        if result["success"]:
+            return result["file"]
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def list_shared_drive_files(max_results: int = 100) -> Dict[str, Any]:
+    """List files that have been shared with the user in Google Drive.
+    
+    Args:
+        max_results: Maximum number of files to return
+        
+    Returns:
+        Dict containing:
+        - total_files (int): Total number of shared files
+        - files (List[Dict]): List of shared file objects, each containing:
+            - id (str): Unique file identifier
+            - name (str): File name
+            - type (str): MIME type of the file
+            - size (str): File size in bytes
+            - created_time (str): ISO timestamp of creation
+            - modified_time (str): ISO timestamp of last modification
+            - owners (List[str]): List of owner email addresses
+            - shared (bool): Whether the file is shared
+            - url (str): Web view URL for the file
+            - last_modified_by (str): Email of last user to modify
+            - editors (List[str]): List of all users who have edited the file
+    """
+    try:
+        client = get_drive_client()
+        result = client.list_shared_files(page_size=max_results)
+        
+        if result["success"]:
+            return {
+                'total_files': result["total_files"],
+                'files': result["files"]
+            }
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def get_drive_file_activity(file_id: str, max_results: int = 100) -> Dict[str, Any]:
+    """Get activity history for a specific file in Google Drive.
+    
+    Args:
+        file_id: ID of the file to get activity for
+        max_results: Maximum number of activities to return
+        
+    Returns:
+        Dict containing:
+        - file (Dict): File information:
+            - id (str): Unique file identifier
+            - name (str): File name
+            - created_time (str): ISO timestamp of creation
+            - modified_time (str): ISO timestamp of last modification
+            - owners (List[str]): List of owner email addresses
+            - last_modified_by (str): Email of last user to modify
+            - editors (List[str]): List of all users who have edited the file
+        - total_activities (int): Total number of activities found
+        - activities (List[Dict]): List of activity objects, each containing:
+            - type (str): Activity type ('created' or 'modified')
+            - time (str): ISO timestamp of the activity
+            - user (str): Email of user who performed the activity
+            - details (str): Description of the activity
+    """
+    try:
+        client = get_drive_client()
+        result = client.get_file_activity(file_id=file_id, max_results=max_results)
+        
+        if result["success"]:
+            return {
+                'file': result["file"],
+                'total_activities': result["total_activities"],
+                'activities': result["activities"]
+            }
+        else:
+            return {'error': result["error"]}
+            
+    except Exception as e:
+        return {'error': str(e)}
+
+@mcp.tool()
+def get_recent_drive_activity(max_results: int = 100) -> Dict[str, Any]:
+    """Get recent activity across all accessible files in Google Drive.
+    
+    Args:
+        max_results: Maximum number of activities to return
+        
+    Returns:
+        Dict containing:
+        - total_activities (int): Total number of activities found
+        - activities (List[Dict]): List of activity objects, each containing:
+            - type (str): Activity type ('modified')
+            - time (str): ISO timestamp of the activity
+            - user (str): Email of user who performed the activity
+            - file (Dict): Information about the affected file:
+                - id (str): Unique file identifier
+                - name (str): File name
+                - type (str): MIME type of the file
+                - editors (List[str]): List of all users who have edited the file
+            - details (str): Description of the activity
+    """
+    try:
+        client = get_drive_client()
+        result = client.get_recent_activity(max_results=max_results)
+        
+        if result["success"]:
+            return {
+                'total_activities': result["total_activities"],
+                'activities': result["activities"]
             }
         else:
             return {'error': result["error"]}
