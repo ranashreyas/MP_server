@@ -12,9 +12,14 @@ import webbrowser
 import threading
 import time
 import logging
-
-from flask import Flask, redirect, request, url_for
+from typing import List, Dict, Any, Optional
+from datetime import datetime
+import requests
 from notion_client import Client
+from flask import Flask, redirect, request
+
+# Import the block parser
+from .notion_models import parse_content_to_blocks, blocks_to_notion_format
 
 class NotionClient:
     def __init__(self, token_path: str):
@@ -120,7 +125,6 @@ class NotionClient:
             basic = base64.b64encode(f"{self.CLIENT_ID}:{self.CLIENT_SECRET}".encode()).decode()
 
             # Exchange code for token
-            import requests  # kept local to avoid an extra dependency in requirements
             res = requests.post(
                 self.NOTION_TOKEN_URL,
                 headers={
@@ -324,31 +328,18 @@ class NotionClient:
                 }
             }
             
-            # Prepare children (body content)
-            children = []
+            # Parse body content into Notion blocks
+            children = None
             if body_content:
-                # Split content into paragraphs
-                paragraphs = body_content.split('\n\n')
-                for paragraph in paragraphs:
-                    if paragraph.strip():
-                        children.append({
-                            "object": "block",
-                            "type": "paragraph",
-                            "paragraph": {
-                                "rich_text": [
-                                    {
-                                        "type": "text",
-                                        "text": {"content": paragraph.strip()}
-                                    }
-                                ]
-                            }
-                        })
+                # Parse content into blocks using the new parser
+                blocks = parse_content_to_blocks(body_content)
+                children = blocks_to_notion_format(blocks)
             
             # Create the page
             new_page = client.pages.create(
                 parent=parent,
                 properties=properties,
-                children=children if children else None
+                children=children
             )
             
             return {
@@ -416,23 +407,9 @@ class NotionClient:
                             except:
                                 pass  # Some blocks might not be deletable
                     
-                    # Prepare new content blocks
-                    new_blocks = []
-                    paragraphs = new_content.split('\n\n')
-                    for paragraph in paragraphs:
-                        if paragraph.strip():
-                            new_blocks.append({
-                                "object": "block",
-                                "type": "paragraph",
-                                "paragraph": {
-                                    "rich_text": [
-                                        {
-                                            "type": "text",
-                                            "text": {"content": paragraph.strip()}
-                                        }
-                                    ]
-                                }
-                            })
+                    # Parse new content into Notion blocks using the new parser
+                    blocks = parse_content_to_blocks(new_content)
+                    new_blocks = blocks_to_notion_format(blocks)
                     
                     # Add new blocks
                     if new_blocks:

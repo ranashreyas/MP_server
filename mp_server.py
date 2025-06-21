@@ -41,30 +41,29 @@ calendar_client = None
 notion_client = None
 drive_client = None
 
-def get_clients():
-    global gmail_client, calendar_client, notion_client, drive_client
+def get_gmail_client():
+    global gmail_client
     if gmail_client is None:
         gmail_client = GmailClient(CREDENTIALS_GMAIL_PATH, TOKEN_GMAIL_PATH)
-        calendar_client = CalendarClient(CREDENTIALS_CALENDAR_PATH, TOKEN_CALENDAR_PATH)
-        notion_client = NotionClient(TOKEN_NOTION_PATH)
-        drive_client = DriveClient(CREDENTIALS_DRIVE_PATH, TOKEN_DRIVE_PATH)
-    return gmail_client, calendar_client, notion_client, drive_client
-
-def get_gmail_client():
-    gmail, _, _, _ = get_clients()
-    return gmail
+    return gmail_client
 
 def get_calendar_client():
-    _, calendar, _, _ = get_clients()
-    return calendar
+    global calendar_client
+    if calendar_client is None:
+        calendar_client = CalendarClient(CREDENTIALS_CALENDAR_PATH, TOKEN_CALENDAR_PATH)
+    return calendar_client
 
 def get_notion_client():
-    _, _, notion, _ = get_clients()
-    return notion
+    global notion_client
+    if notion_client is None:
+        notion_client = NotionClient(TOKEN_NOTION_PATH)
+    return notion_client
 
 def get_drive_client():
-    _, _, _, drive = get_clients()
-    return drive
+    global drive_client
+    if drive_client is None:
+        drive_client = DriveClient(CREDENTIALS_DRIVE_PATH, TOKEN_DRIVE_PATH)
+    return drive_client
 
 @mcp.tool()
 def debug_paths() -> Dict[str, Any]:
@@ -662,6 +661,12 @@ def create_notion_page(title: str = None, parent_page_title: str = None, body_co
                 Type ### followed by space to create an H3 sub-heading.
                 Type > followed by space to create a toggle list.
                 Type " followed by space to create a quote block.
+                
+                For tables, use the following format:
+                ((col1, col2, col3)(cell1, cell2, cell3)(cell4, cell5, cell6))
+                
+                The first row becomes the header, and each row is separated by parentheses.
+                Example: ((Name, Age, City)(John, 25, NYC)(Jane, 30, LA))
     """
     try:
         client = get_notion_client()
