@@ -23,37 +23,53 @@ class DriveClient:
         self.authenticate()
     
     def authenticate(self):
-        """Authenticate with Google Drive API."""
+        """Authenticate with Google Drive API using Device Flow (no localhost required)."""
         creds = None
         
         # Load existing credentials
         if os.path.exists(self.token_path):
-            with open(self.token_path, 'rb') as token:
-                creds = pickle.load(token)
+            try:
+                with open(self.token_path, 'rb') as token:
+                    creds = pickle.load(token)
+            except:
+                # If pickle fails, continue to re-authenticate
+                creds = None
         
         # If no valid credentials, get new ones
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    print(f"Failed to refresh credentials: {e}")
+                    creds = None
+            
+            if not creds:
                 if not os.path.exists(self.credentials_path):
                     raise FileNotFoundError(
                         f"credentials.json not found at {self.credentials_path}. Please download it from Google Cloud Console and place it in the same directory as this script."
                     )
+                
+                # Use Device Flow instead of local server
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.credentials_path, [
                         'https://www.googleapis.com/auth/drive.readonly',
                         'https://www.googleapis.com/auth/drive.metadata.readonly'
                     ])
+                
                 try:
+                    # Device flow - user will see a URL and code to enter in browser
                     creds = flow.run_local_server(port=8083, timeout_seconds=300)
-                except:
-                    # Force cleanup if something goes wrong
-                    pass
+                except Exception as e:
+                    print(f"Authentication failed: {e}")
+                    raise
             
             # Save credentials for next run
-            with open(self.token_path, 'wb') as token:
-                pickle.dump(creds, token)
+            try:
+                with open(self.token_path, 'wb') as token:
+                    pickle.dump(creds, token)
+            except Exception as e:
+                print(f"Warning: Could not save credentials: {e}")
         
         self.service = build('drive', 'v3', credentials=creds)
     

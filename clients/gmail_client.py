@@ -17,45 +17,29 @@ from googleapiclient.errors import HttpError
 from .models import EmailInsight
 
 class GmailClient:
-    def __init__(self, credentials_path: str, token_path: str):
-        self.credentials_path = credentials_path
-        self.token_path = token_path
+    def __init__(self, credentials_path: str, token_path: str, creds: Credentials):
+        # self.credentials_path = credentials_path
+        # self.token_path = token_path
+        self.creds = creds
         self.service = None
         self.authenticate()
     
     def authenticate(self):
-        """Authenticate with Gmail API."""
-        creds = None
+        """Authenticate with Gmail API using provided Credentials object."""
+        if not isinstance(self.creds, Credentials):
+            raise ValueError(f"Expected Credentials object, got {type(self.creds)}")
         
-        # Load existing credentials
-        if os.path.exists(self.token_path):
-            with open(self.token_path, 'rb') as token:
-                creds = pickle.load(token)
-        
-        # If no valid credentials, get new ones
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if not os.path.exists(self.credentials_path):
-                    raise FileNotFoundError(
-                        f"credentials.json not found at {self.credentials_path}. Please download it from Google Cloud Console and place it in the same directory as this script."
-                    )
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.credentials_path, [
-                        'https://www.googleapis.com/auth/gmail.readonly'
-                    ])
+        # Validate credentials
+        if not self.creds.valid:
+            if self.creds.expired and self.creds.refresh_token:
                 try:
-                    creds = flow.run_local_server(port=8080, timeout_seconds=300)
-                except:
-                    # Force cleanup if something goes wrong
-                    pass
-            
-            # Save credentials for next run
-            with open(self.token_path, 'wb') as token:
-                pickle.dump(creds, token)
+                    self.creds.refresh(Request())
+                except Exception as e:
+                    raise ValueError(f"Failed to refresh credentials: {e}")
+            else:
+                raise ValueError("Credentials are invalid and cannot be refreshed")
         
-        self.service = build('gmail', 'v1', credentials=creds)
+        self.service = build('gmail', 'v1', credentials=self.creds)
     
     def get_messages(self, query: str = '', max_results: int = 100) -> List[Dict]:
         """Get messages from Gmail."""

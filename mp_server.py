@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sys
 from datetime import datetime, timedelta
@@ -7,13 +8,15 @@ import base64
 import json
 from pathlib import Path
 from urllib.parse import urlencode
+import uuid
 
 # Add the script directory to Python path for reliable imports
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
-from mcp.server.fastmcp import FastMCP
+# from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 # Import our custom clients
 from clients.gmail_client import GmailClient
@@ -36,15 +39,122 @@ TOKEN_DRIVE_PATH = os.path.join(SCRIPT_DIR, "token_drive.pickle")
 mcp = FastMCP("MP_Server")
 
 # Initialize clients
-gmail_client = None
+# gmail_client = None
 calendar_client = None
 notion_client = None
 drive_client = None
 
-def get_gmail_client():
-    global gmail_client
-    if gmail_client is None:
-        gmail_client = GmailClient(CREDENTIALS_GMAIL_PATH, TOKEN_GMAIL_PATH)
+def pullGoogleCreds(session_uuid: str):
+    import requests
+    
+    if not session_uuid:
+        return "Error: session_uuid is required"
+    
+    try:
+        # Get the secret from environment variables
+        env_secret = os.environ.get('ENV_SECRET')
+        if not env_secret:
+            return "Error: ENV_SECRET not configured"
+        
+        # Generate hash of the secret
+        secret_hash = hashlib.sha256(env_secret.encode()).hexdigest()
+        
+        # Make request with hash parameter
+        response = requests.get(
+            "https://testremotemcpserver.onrender.com/creds",
+            params={"hash": secret_hash, "filename": session_uuid},
+            timeout=30  # Add timeout
+        )
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            
+            # Check if response has the expected structure
+            if "credentials" in response_data:
+                creds_data = response_data["credentials"]
+            else:
+                # Fallback to root level if no nested structure
+                creds_data = response_data
+            
+            # Validate that we have the required fields
+            required_fields = ['token', 'client_id', 'client_secret', 'token_uri']
+            missing_fields = [field for field in required_fields if not creds_data.get(field)]
+            if missing_fields:
+                return f"Error: Missing required credential fields: {missing_fields}"
+            
+            # Validate scopes field exists and is a list
+            if 'scopes' not in creds_data:
+                return "Error: Missing required field 'scopes'"
+            
+            if not isinstance(creds_data.get('scopes'), list):
+                return "Error: 'scopes' field must be a list"
+            
+            # Ensure Gmail scope is present
+            gmail_scope = 'https://www.googleapis.com/auth/gmail.readonly'
+            if gmail_scope not in creds_data['scopes']:
+                return f"Error: Gmail scope '{gmail_scope}' not found in credentials"
+            
+            return creds_data
+        else:
+            return f"Error fetching credentials: {response.status_code} - {response.text}. You may have to do google oauth again."
+    except requests.Timeout:
+        return "Error: Request timed out while fetching credentials"
+    except requests.RequestException as e:
+        return f"Error making request: {str(e)}"
+    except Exception as e:
+        return f"Unexpected error: {str(e)}"
+
+def get_gmail_client(session_uuid: str):
+    
+    creds_data = pullGoogleCreds(session_uuid)
+    
+    # Handle error cases
+    if isinstance(creds_data, str):
+        raise ValueError(f"Failed to get credentials: {creds_data}")
+    
+    if not isinstance(creds_data, dict):
+        raise ValueError(f"Invalid credentials format: expected dict, got {type(creds_data)}")
+    
+    # Convert dict to Google Credentials object
+    from google.oauth2.credentials import Credentials
+    try:
+        # Extract required fields with validation
+        token = creds_data.get('token')
+        refresh_token = creds_data.get('refresh_token')
+        token_uri = creds_data.get('token_uri')
+        client_id = creds_data.get('client_id')
+        client_secret = creds_data.get('client_secret')
+        scopes = creds_data.get('scopes')
+        
+        # Validate all required fields are present
+        if not all([token, client_id, client_secret, token_uri]):
+            missing = [k for k, v in {
+                'token': token, 'client_id': client_id, 
+                'client_secret': client_secret, 'token_uri': token_uri
+            }.items() if not v]
+            raise ValueError(f"Missing required credential fields: {missing}")
+        
+        if not scopes or not isinstance(scopes, list):
+            raise ValueError("Scopes must be a non-empty list")
+        
+        credentials = Credentials(
+            token=token,
+            refresh_token=refresh_token,
+            token_uri=token_uri,
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=scopes
+        )
+        
+        # Validate the credentials object was created successfully
+        if not hasattr(credentials, 'token') or not credentials.token:
+            raise ValueError("Failed to create valid credentials object")
+        
+    except Exception as e:
+        raise ValueError(f"Failed to create credentials object: {e}")
+    
+    gmail_client = GmailClient(CREDENTIALS_GMAIL_PATH, TOKEN_GMAIL_PATH, credentials)
+    
     return gmail_client
 
 def get_calendar_client():
@@ -83,10 +193,46 @@ def debug_paths() -> Dict[str, Any]:
     }
 
 @mcp.tool()
-def get_unread_emails(max_results: int = 75) -> Dict[str, Any]:
-    """Get unread emails from Gmail inbox."""
+def generate_session_uuid() -> str:
+    """
+    Generate a session uuid.
+    returns: a uuid.
+    """
+    return str(uuid.uuid4())
+
+@mcp.tool()
+def google_oauth(session_uuid: str) -> str:
+    """
+    Perform Google OAuth to get access to the user's Gmail.
+    
+    It is very important that you remember the session uuid. If you don't remember it exactly, call the tool "generate_session_uuid"
+    as that is the uuid that stores the users credentials, and the user will have to redo the oauth process. Don't run any tools after this until
+    you have confirmation that the user has authorized their Google account by clicking the link and completing the oauth process.
+
+    returns: a link to which you will show to the user, who will then click it and authorize their Google account.
+    """
+    return f"https://testremotemcpserver.onrender.com/google/auth?user_id=default_user&client_code={session_uuid}"
+
+@mcp.tool()
+def get_unread_emails(max_results: int = 75, session_uuid: str = None) -> Dict[str, Any]:
+    """
+    Get unread emails from Gmail inbox.
+
+    If you remember  the session uuid, call this tool.
+    
+    If you don't remember it, call the tool "generate_session_uuid" as that is the uuid that
+    stores the users credentials. Then, you must do google oauth again, by calling the google_oauth tool. Only when you have confirmation that the 
+    user has authorized their Google account, call this tool again.
+
+    args:
+        max_results: the maximum number of emails to return.
+        session_uuid: the uuid that stores the users credentials.
+    """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
     try:
-        client = get_gmail_client()
+        client = get_gmail_client(session_uuid)
         messages = client.get_messages('is:unread', max_results)
         
         insights = []
@@ -104,14 +250,33 @@ def get_unread_emails(max_results: int = 75) -> Dict[str, Any]:
             'total_unread': len(insights),
             'emails': sorted(insights, key=lambda x: x['importance_score'], reverse=True)
         }
+    except ValueError as e:
+        # Handle credential/authentication errors
+        return {'error': f'Authentication error: {str(e)}. Please run google_oauth again.'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'Unexpected error: {str(e)}'}
 
 @mcp.tool()
-def get_important_missed_emails(days_back: int = 7, importance_threshold: int = 7) -> Dict[str, Any]:
-    """Get important emails that might have been missed in the last N days."""
+def get_important_missed_emails(days_back: int = 7, importance_threshold: int = 7, session_uuid: str = None) -> Dict[str, Any]:
+    """
+    Get important emails that might have been missed in the last N days.
+    
+    If you remember  the session uuid, call this tool.
+    
+    If you don't remember it, call the tool "generate_session_uuid" as that is the uuid that
+    stores the users credentials. Then, you must do google oauth again, by calling the google_oauth tool. Only when you have confirmation that the 
+    user has authorized their Google account, call this tool again.
+
+    args:
+        days_back: the number of days to look back for important emails.
+        importance_threshold: the minimum importance score for an email to be considered important.
+        session_uuid: the uuid that stores the users credentials.
+    """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
     try:
-        client = get_gmail_client()
+        client = get_gmail_client(session_uuid)
         
         # Query for recent unread emails
         query = f'is:unread newer_than:{days_back}d'
@@ -136,14 +301,31 @@ def get_important_missed_emails(days_back: int = 7, importance_threshold: int = 
             'count': len(important_emails),
             'emails': sorted(important_emails, key=lambda x: x['importance_score'], reverse=True)
         }
+    except ValueError as e:
+        return {'error': f'Authentication error: {str(e)}. Please run google_oauth again.'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'Unexpected error: {str(e)}'}
 
 @mcp.tool()
-def get_email_summary_by_sender(days_back: int = 30) -> Dict[str, Any]:
-    """Get a summary of emails grouped by sender for the last N days."""
+def get_email_summary_by_sender(days_back: int = 30, session_uuid: str = None) -> Dict[str, Any]:
+    """
+    Get a summary of emails grouped by sender for the last N days.
+    
+    If you remember  the session uuid, call this tool.
+    
+    If you don't remember it, call the tool "generate_session_uuid" as that is the uuid that
+    stores the users credentials. Then, you must do google oauth again, by calling the google_oauth tool. Only when you have confirmation that the 
+    user has authorized their Google account, call this tool again.
+
+    args:
+        days_back: the number of days to look back for email summaries.
+        session_uuid: the uuid that stores the users credentials.
+    """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
     try:
-        client = get_gmail_client()
+        client = get_gmail_client(session_uuid)
         
         query = f'newer_than:{days_back}d'
         messages = client.get_messages(query, 100)
@@ -188,14 +370,32 @@ def get_email_summary_by_sender(days_back: int = 30) -> Dict[str, Any]:
             'total_senders': len(sender_list),
             'senders': sorted(sender_list, key=lambda x: x['avg_importance'], reverse=True)
         }
+    except ValueError as e:
+        return {'error': f'Authentication error: {str(e)}. Please run google_oauth again.'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'Unexpected error: {str(e)}'}
 
 @mcp.tool()
-def search_emails(query: str, max_results: int = 20) -> Dict[str, Any]:
-    """Search emails using Gmail search syntax."""
+def search_emails(query: str, max_results: int = 20, session_uuid: str = None) -> Dict[str, Any]:
+    """
+    Search emails using Gmail search syntax.
+    
+    If you remember  the session uuid, call this tool.
+    
+    If you don't remember it, call the tool "generate_session_uuid" as that is the uuid that
+    stores the users credentials. Then, you must do google oauth again, by calling the google_oauth tool. Only when you have confirmation that the 
+    user has authorized their Google account, call this tool again.
+
+    args:
+        query: the Gmail search query.
+        max_results: the maximum number of emails to return.
+        session_uuid: the uuid that stores the users credentials.
+    """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
     try:
-        client = get_gmail_client()
+        client = get_gmail_client(session_uuid)
         messages = client.get_messages(query, max_results)
         
         results = []
@@ -215,14 +415,30 @@ def search_emails(query: str, max_results: int = 20) -> Dict[str, Any]:
             'count': len(results),
             'emails': sorted(results, key=lambda x: x['date'], reverse=True)
         }
+    except ValueError as e:
+        return {'error': f'Authentication error: {str(e)}. Please run google_oauth again.'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'Unexpected error: {str(e)}'}
 
 @mcp.tool()
-def get_weekly_email_insights() -> Dict[str, Any]:
-    """Get comprehensive weekly email insights."""
+def get_weekly_email_insights(session_uuid: str = None) -> Dict[str, Any]:
+    """
+    Get comprehensive weekly email insights.
+    
+    If you remember  the session uuid, call this tool.
+    
+    If you don't remember it, call the tool "generate_session_uuid" as that is the uuid that
+    stores the users credentials. Then, you must do google oauth again, by calling the google_oauth tool. Only when you have confirmation that the 
+    user has authorized their Google account, call this tool again.
+
+    args:
+        session_uuid: the uuid that stores the users credentials.
+    """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
     try:
-        client = get_gmail_client()
+        client = get_gmail_client(session_uuid)
         
         # Get emails from last 7 days
         messages = client.get_messages('newer_than:7d', 100)
@@ -265,8 +481,10 @@ def get_weekly_email_insights() -> Dict[str, Any]:
                 if insight.is_unread and insight.importance_score >= 7
             ][:5]
         }
+    except ValueError as e:
+        return {'error': f'Authentication error: {str(e)}. Please run google_oauth again.'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'Unexpected error: {str(e)}'}
 
 @mcp.resource("gmail://setup-instructions")
 def setup_instructions() -> str:
@@ -1038,4 +1256,27 @@ def get_recent_drive_activity(max_results: int = 100) -> Dict[str, Any]:
         return {'error': str(e)}
 
 if __name__ == "__main__":
-    mcp.run() 
+    # mcp.run() 
+    import asyncio
+    port = int(os.environ.get("PORT", 8001))
+    asyncio.run(
+        mcp.run_sse_async(
+            host="0.0.0.0",  # Changed from 127.0.0.1 to allow external connections
+            port=port,
+            log_level="debug"
+        )
+    )
+
+
+
+# {
+#   "mcpServers": {
+#     "MP_Server": {
+#       "command": "/Users/shreyas/anaconda3/envs/mcp-server/bin/mcp",
+#       "args": [
+#         "run",
+#         "/Users/shreyas/tempDesktop/Programming/GeneralPurposeMCP/mp_server.py"
+#       ]
+#     }
+#   }
+# }
