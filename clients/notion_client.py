@@ -1,202 +1,54 @@
 """
-Gmail API client for the MCP server.
+Notion API client for the MCP server.
 """
 
 import os
-import subprocess
-import sys
-import base64
-import json
 import pickle
-import webbrowser
-import threading
-import time
-import logging
+import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-import requests
 from notion_client import Client
-from flask import Flask, redirect, request
 
 # Import the block parser
 from .notion_models import parse_content_to_blocks, blocks_to_notion_format
 
 class NotionClient:
-    def __init__(self, token_path: str):
-        self.token_path = token_path
-        self.user_data = None
-        
-        # Suppress ALL logging output from various sources
-        logging.getLogger().setLevel(logging.ERROR)
-        logging.getLogger('werkzeug').setLevel(logging.ERROR)
-        logging.getLogger('flask').setLevel(logging.ERROR)
-        logging.getLogger('urllib3').setLevel(logging.ERROR)
-        logging.getLogger('requests').setLevel(logging.ERROR)
-        
-        # Suppress warnings
-        import warnings
-        warnings.filterwarnings('ignore')
-        
-        # Initialize Flask app with minimal output
-        self.app = Flask(__name__)
-        
-        # Configuration
-        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        if SCRIPT_DIR not in sys.path:
-            sys.path.insert(0, SCRIPT_DIR)
-
-        self.CLIENT_ID = None
-        self.CLIENT_SECRET = None
-        self.REDIRECT_URI = None
-        self.auth_url = None
-
-        with open(os.path.join(SCRIPT_DIR, '../credentials_notion.json')) as f:
-            keys = json.load(f)
-            self.CLIENT_ID = keys.get('client_id')
-            self.CLIENT_SECRET = keys.get('client_secret') 
-            self.REDIRECT_URI = keys.get('redirect_uri')
-            self.auth_url = keys.get('auth_url')
-
-        self.NOTION_TOKEN_URL = "https://api.notion.com/v1/oauth/token"
+    def __init__(self, creds: Dict[str, Any]):
+        self.creds = creds
+        self.service = None
         self.NOTION_API_VERSION = "2022-06-28"
-        
-        # Load existing token if available
-        self.user_data = self.load_token()
-        
-        # Setup routes
-        if not self.user_data:
-            self.setup_routes()
-            self.authenticate()
-    
-    def build_oauth_url(self, state: str = "init") -> str:
-        return self.auth_url
-
-    def save_token(self, data: dict) -> None:
-        """Persist token data locally using pickle."""
-        try:
-            with open(self.token_path, 'wb') as f:
-                pickle.dump(data, f)
-        except Exception:
-            # If we can't write to file, just store in memory
-            pass
-
-    def load_token(self) -> dict | None:
-        """Load token data from pickle file."""
-        
-        if os.path.exists(self.token_path):
-            try:
-                with open(self.token_path, 'rb') as f:
-                    return pickle.load(f)
-            except Exception:
-                return None
-        return None
-    
-    def setup_routes(self):
-        """Setup Flask routes for OAuth flow."""
-        
-        @self.app.route("/")
-        def index():
-            token = self.user_data or self.load_token()
-            if token:
-                return (
-                    f"<p>Token already stored. You may close this window"
-                    f"<h3>User Data:</h3>"
-                    f"<pre>{json.dumps(token, indent=2)}</pre>"
-                )
-            return (
-                "<h3>Connect your Notion workspace</h3>"
-                f'<a href="/authorize">Add to Notion</a>'
-            )
-
-        @self.app.route("/authorize")
-        def authorize():
-            """Redirect the user to Notion's consent screen."""
-            return redirect(self.build_oauth_url())
-
-        @self.app.route("/auth/notion/callback")
-        def oauth_callback():
-            """Handle Notion redirect → exchange `code` for `access_token`."""
-            # Capture `code` param
-            code = request.args.get("code")
-            if not code:
-                return f"Error: {request.args}", 400
-
-            # Prepare Basic Auth header
-            basic = base64.b64encode(f"{self.CLIENT_ID}:{self.CLIENT_SECRET}".encode()).decode()
-
-            # Exchange code for token
-            res = requests.post(
-                self.NOTION_TOKEN_URL,
-                headers={
-                    "Authorization": f"Basic {basic}",
-                    "Content-Type": "application/json",
-                    "Notion-Version": self.NOTION_API_VERSION,
-                },
-                json={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": self.REDIRECT_URI,
-                },
-                timeout=10,
-            )
-            if not res.ok:
-                return f"Token exchange failed → {res.text}", 400
-
-            self.user_data = res.json()
-            self.save_token(self.user_data)  # Try to persist, but continue if it fails
-            
-            # Schedule server shutdown after response is sent
-            def shutdown_server():
-                time.sleep(2)  # Give time for response to be sent
-                try:
-                    # Try to shutdown Flask server gracefully
-                    func = request.environ.get('werkzeug.server.shutdown')
-                    if func is None:
-                        # If that doesn't work, use signal
-                        import signal
-                        os.kill(os.getpid(), signal.SIGTERM)
-                    else:
-                        func()
-                except:
-                    # Fallback method
-                    import sys
-                    sys.exit(0)
-            
-            threading.Thread(target=shutdown_server, daemon=True).start()
-
-            return (
-                f"<p>Authorization complete! You may close this tab now.</p>"
-                f"<h3>User Data:</h3>"
-                f"<pre>{json.dumps(self.user_data, indent=2)}</pre>"
-                # '<a href="/create_page">Create "Hello World" page ↗︎</a></p>'
-            )
-    
-    def open_browser(self):
-        """Open the browser to the OAuth server after a short delay."""
-        time.sleep(1.5)  # Wait for server to start
-        webbrowser.open('http://localhost:8082/')
+        self.authenticate()
     
     def authenticate(self):
-        threading.Thread(target=self.open_browser, daemon=True).start()
+        """Authenticate with Notion API using provided credentials dict."""
+        if not isinstance(self.creds, dict):
+            raise ValueError(f"Expected credentials dict, got {type(self.creds)}")
         
-        def run_server():
-            self.app.run(port=8082, debug=False, use_reloader=False, threaded=True)
+        # Validate required fields
+        required_fields = ['access_token']
+        missing_fields = [field for field in required_fields if not self.creds.get(field)]
+        if missing_fields:
+            raise ValueError(f"Missing required credential fields: {missing_fields}")
         
-        self.server_thread = threading.Thread(target=run_server, daemon=True)
-        self.server_thread.start()
+        # Validate access token exists and is non-empty
+        access_token = self.creds.get('access_token')
+        if not access_token or not isinstance(access_token, str):
+            raise ValueError("Invalid or missing access_token in credentials")
         
-        # Don't block here - let __init__ complete
-        # The server will run in the background until OAuth completes
+        try:
+            self.service = Client(auth=access_token, notion_version=self.NOTION_API_VERSION)
+            # Test the connection by making a simple API call
+            self.service.users.me()
+        except Exception as e:
+            raise ValueError(f"Failed to authenticate with Notion: {e}")
     
     def get_all_pages(self, top_level_only: bool = False, page_size: int = 100):
-        if not self.user_data or 'access_token' not in self.user_data:
+        if not self.service:
             raise Exception("Not authenticated. Please complete OAuth flow first.")
         
         try:
-            client = Client(auth=self.user_data["access_token"], notion_version=self.NOTION_API_VERSION)
-            
             # Search for pages that are not in databases (top-level pages)
-            results = client.search(
+            results = self.service.search(
                 filter={
                     "value": "page",
                     "property": "object"
@@ -267,14 +119,12 @@ class NotionClient:
     
     def find_page_by_title(self, title: str):
         """Find a page by its title."""
-        if not self.user_data or 'access_token' not in self.user_data:
+        if not self.service:
             raise Exception("Not authenticated. Please complete OAuth flow first.")
         
         try:
-            client = Client(auth=self.user_data["access_token"], notion_version=self.NOTION_API_VERSION)
-            
             # Search for pages with the given title
-            results = client.search(
+            results = self.service.search(
                 query=title,
                 filter={
                     "value": "page",
@@ -295,12 +145,10 @@ class NotionClient:
     
     def create_page(self, title: str = None, parent_page_title: str = None, body_content: str = None):
         """Create a new page in Notion."""
-        if not self.user_data or 'access_token' not in self.user_data:
+        if not self.service:
             raise Exception("Not authenticated. Please complete OAuth flow first.")
         
         try:
-            client = Client(auth=self.user_data["access_token"], notion_version=self.NOTION_API_VERSION)
-            
             # Set default title if not provided
             if not title:
                 title = "New Page"
@@ -336,7 +184,7 @@ class NotionClient:
                 children = blocks_to_notion_format(blocks)
             
             # Create the page
-            new_page = client.pages.create(
+            new_page = self.service.pages.create(
                 parent=parent,
                 properties=properties,
                 children=children
@@ -367,16 +215,14 @@ class NotionClient:
             new_content: New content for the page (optional)
             append_content: If True, append content; if False, replace existing content
         """
-        if not self.user_data or 'access_token' not in self.user_data:
+        if not self.service:
             raise Exception("Not authenticated. Please complete OAuth flow first.")
         
         try:
-            client = Client(auth=self.user_data["access_token"], notion_version=self.NOTION_API_VERSION)
-            
             # Update title if provided
             if new_title:
                 try:
-                    client.pages.update(
+                    self.service.pages.update(
                         page_id=page_id,
                         properties={
                             "title": {
@@ -400,10 +246,10 @@ class NotionClient:
                 try:
                     # If replacing content, first get and delete existing blocks
                     if not append_content:
-                        existing_blocks = client.blocks.children.list(block_id=page_id)
+                        existing_blocks = self.service.blocks.children.list(block_id=page_id)
                         for block in existing_blocks.get("results", []):
                             try:
-                                client.blocks.delete(block_id=block["id"])
+                                self.service.blocks.delete(block_id=block["id"])
                             except:
                                 pass  # Some blocks might not be deletable
                     
@@ -413,7 +259,7 @@ class NotionClient:
                     
                     # Add new blocks
                     if new_blocks:
-                        client.blocks.children.append(block_id=page_id, children=new_blocks)
+                        self.service.blocks.children.append(block_id=page_id, children=new_blocks)
                         
                 except Exception as e:
                     return {
@@ -423,7 +269,7 @@ class NotionClient:
             
             # Get updated page info
             try:
-                updated_page = client.pages.retrieve(page_id=page_id)
+                updated_page = self.service.pages.retrieve(page_id=page_id)
                 return {
                     "success": True,
                     "page_id": page_id,
@@ -463,20 +309,18 @@ class NotionClient:
         Returns:
             Dictionary containing success status and page contents
         """
-        if not self.user_data or 'access_token' not in self.user_data:
+        if not self.service:
             raise Exception("Not authenticated. Please complete OAuth flow first.")
         
         try:
-            client = Client(auth=self.user_data["access_token"], notion_version=self.NOTION_API_VERSION)
-            
             pages_content = []
             for page_id in page_ids:
                 try:
                     # Get page metadata
-                    page = client.pages.retrieve(page_id=page_id)
+                    page = self.service.pages.retrieve(page_id=page_id)
                     
                     # Get page blocks (content)
-                    blocks = client.blocks.children.list(block_id=page_id)
+                    blocks = self.service.blocks.children.list(block_id=page_id)
                     
                     # Extract text content from blocks
                     content = []

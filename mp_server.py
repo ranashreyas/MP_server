@@ -41,8 +41,8 @@ mcp = FastMCP("MP_Server")
 # Initialize clients
 # gmail_client = None
 # calendar_client = None
-notion_client = None
-drive_client = None
+# notion_client = None
+# drive_client = None
 
 def pullGoogleCreds(session_uuid: str):
     import requests
@@ -104,6 +104,55 @@ def pullGoogleCreds(session_uuid: str):
     except Exception as e:
         return f"Unexpected error: {str(e)}"
 
+def pullNotionCreds(session_uuid: str):
+    import requests
+    
+    if not session_uuid:
+        return "Error: session_uuid is required"
+    
+    try:
+        # Get the secret from environment variables
+        env_secret = os.environ.get('ENV_SECRET')
+        if not env_secret:
+            return "Error: ENV_SECRET not configured"
+        
+        # Generate hash of the secret
+        secret_hash = hashlib.sha256(env_secret.encode()).hexdigest()
+        
+        # Make request with hash parameter
+        response = requests.get(
+            "https://testremotemcpserver.onrender.com/creds",
+            params={"hash": secret_hash, "filename": session_uuid},
+            timeout=30  # Add timeout
+        )
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            
+            # Check if response has the expected structure
+            if "credentials" in response_data:
+                creds_data = response_data
+            else:
+                # Fallback to root level if no nested structure
+                creds_data = response_data
+            
+            # Validate that we have the required fields
+            required_fields = ['access_token', 'workspace_id']
+            missing_fields = [field for field in required_fields if not creds_data.get(field)]
+            if missing_fields:
+                return f"Error: Missing required credential fields: {missing_fields}"
+            
+            return creds_data
+        else:
+            return f"Error fetching credentials: {response.status_code} - {response.text}. You may have to do notion oauth again."
+    except requests.Timeout:
+        return "Error: Request timed out while fetching credentials"
+    except requests.RequestException as e:
+        return f"Error making request: {str(e)}"
+    except Exception as e:
+        return f"Unexpected error: {str(e)}"
+        
+
 def get_gmail_client(session_uuid: str):
     
     creds_data = pullGoogleCreds(session_uuid)
@@ -153,7 +202,7 @@ def get_gmail_client(session_uuid: str):
     except Exception as e:
         raise ValueError(f"Failed to create credentials object: {e}")
     
-    gmail_client = GmailClient(CREDENTIALS_GMAIL_PATH, TOKEN_GMAIL_PATH, credentials)
+    gmail_client = GmailClient(credentials)
     
     return gmail_client
 
@@ -215,15 +264,9 @@ def get_calendar_client(session_uuid: str):
     except Exception as e:
         raise ValueError(f"Failed to create credentials object: {e}")
     
-    calendar_client = CalendarClient(CREDENTIALS_CALENDAR_PATH, TOKEN_CALENDAR_PATH, credentials)
+    calendar_client = CalendarClient(credentials)
     
     return calendar_client
-
-def get_notion_client():
-    global notion_client
-    if notion_client is None:
-        notion_client = NotionClient(TOKEN_NOTION_PATH)
-    return notion_client
 
 def get_drive_client(session_uuid: str):
     
@@ -283,9 +326,30 @@ def get_drive_client(session_uuid: str):
     except Exception as e:
         raise ValueError(f"Failed to create credentials object: {e}")
     
-    drive_client = DriveClient(CREDENTIALS_DRIVE_PATH, TOKEN_DRIVE_PATH, credentials)
+    drive_client = DriveClient(credentials)
     
     return drive_client
+
+def get_notion_client(session_uuid: str):
+    
+    creds_data = pullNotionCreds(session_uuid)
+    
+    # Handle error cases
+    if isinstance(creds_data, str):
+        raise ValueError(f"Failed to get credentials: {creds_data}")
+    
+    if not isinstance(creds_data, dict):
+        raise ValueError(f"Invalid credentials format: expected dict, got {type(creds_data)}")
+    
+    # Validate required fields
+    required_fields = ['access_token']
+    missing_fields = [field for field in required_fields if not creds_data.get(field)]
+    if missing_fields:
+        raise ValueError(f"Missing required credential fields: {missing_fields}")
+    
+    notion_client = NotionClient(creds_data)
+    
+    return notion_client
 
 @mcp.tool()
 def debug_paths() -> Dict[str, Any]:
@@ -351,10 +415,11 @@ def get_unread_emails(max_results: int = 75, session_uuid: str = None) -> Dict[s
     """
     Get unread emails from Gmail inbox.
 
-    If you remember  the session uuid, call this tool.
+    If you remember the session uuid, call this tool.
     
     If you don't remember it, call the tool "generate_session_uuid" as that is the uuid that
-    stores the users credentials. Then, you must do google oauth again, by calling the google_oauth tool. Only when you have confirmation that the 
+    stores the users credentials. Then, you must do google oauth again, by calling the google_oauth tool.
+    Only when you have confirmation that the 
     user has authorized their Google account, call this tool again.
 
     args:
@@ -1001,15 +1066,23 @@ def get_weekly_calendar_summary(calendar_id: str = 'primary', session_uuid: str 
 
     
 @mcp.tool()
-def get_notion_pages(top_level_only: bool = False, max_results: int = 100) -> Dict[str, Any]:
+def get_notion_pages(top_level_only: bool = False, max_results: int = 100, session_uuid: str = None) -> Dict[str, Any]:
     """Get all pages from Notion workspace.
+
+    If you remember the session uuid, call this tool.
+    
+    If you don't remember it, you must do notion oauth again, by calling the notion_oauth tool.
+    Only when you have confirmation that the user has authorized their Notion account, call this tool again.
     
     Args:
         top_level_only: If True, only return top-level pages (default: False)
         max_results: Maximum number of pages to return (default: 100)
     """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
     try:
-        client = get_notion_client()
+        client = get_notion_client(session_uuid)
         result = client.get_all_pages(top_level_only=top_level_only, page_size=max_results)
         
         if result["success"]:
@@ -1031,13 +1104,20 @@ def get_notion_pages(top_level_only: bool = False, max_results: int = 100) -> Di
             }
         else:
             return {'error': result["error"]}
-            
+    except ValueError as e:
+        # Handle credential/authentication errors
+        return {'error': f'Authentication error: {str(e)}. Please run notion_oauth again.'}        
     except Exception as e:
         return {'error': str(e)}
 
 @mcp.tool()
-def create_notion_page(title: str = None, parent_page_title: str = None, body_content: str = None) -> Dict[str, Any]:
+def create_notion_page(title: str = None, parent_page_title: str = None, body_content: str = None, session_uuid: str = None) -> Dict[str, Any]:
     """Create a new page in Notion.
+
+    If you remember the session uuid, call this tool.
+    
+    If you don't remember it, you must do notion oauth again, by calling the notion_oauth tool.
+    Only when you have confirmation that the user has authorized their Notion account, call this tool again.
     
     Args:
         title: Page title (defaults to "New Page" if not provided)
@@ -1065,9 +1145,13 @@ def create_notion_page(title: str = None, parent_page_title: str = None, body_co
                 The first row becomes the header, and each row is separated by parentheses.
                 Example: ((Name, Age, City)(John, 25, NYC)(Jane, 30, LA))
     """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
     try:
-        client = get_notion_client()
-        body_content = body_content.replace("[ ]", "[]")
+        client = get_notion_client(session_uuid)
+        if body_content:
+            body_content = body_content.replace("[ ]", "[]")
         result = client.create_page(title=title, parent_page_title=parent_page_title, body_content=body_content)
         
         if result["success"]:
@@ -1092,23 +1176,34 @@ def create_notion_page(title: str = None, parent_page_title: str = None, body_co
             return response
         else:
             return {'error': result["error"]}
-            
+    except ValueError as e:
+        # Handle credential/authentication errors
+        return {'error': f'Authentication error: {str(e)}. Please run notion_oauth again.'}        
     except Exception as e:
         return {'error': str(e)}
 
 @mcp.tool()
-def update_notion_page(page_id: str, new_title: str = None, new_content: str = None, append_content: bool = False) -> Dict[str, Any]:
+def update_notion_page(page_id: str, new_title: str = None, new_content: str = None, append_content: bool = False, session_uuid: str = None) -> Dict[str, Any]:
     """Update an existing page in Notion.
     
+    If you remember the session uuid, call this tool.
+    
+    If you don't remember it, you must do notion oauth again, by calling the notion_oauth tool.
+    Only when you have confirmation that the user has authorized their Notion account, call this tool again.
+
     Args:
         page_id: Page ID to update (e.g., "12345678-1234-1234-1234-123456789012") If you are not given the page id (user gives title of page to update), you need to find the page id first.
         new_title: New title for the page (optional)
         new_content: New content for the page (optional, supports multiple paragraphs separated by double newlines)
         append_content: If True, append new content to existing; if False, replace all content (default: False)
     """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
     try:
-        client = get_notion_client()
-        new_content = new_content.replace("[ ]", "[]")
+        client = get_notion_client(session_uuid)
+        if new_content:
+            new_content = new_content.replace("[ ]", "[]")
         result = client.update_page(
             page_id=page_id,
             new_title=new_title,
@@ -1145,22 +1240,32 @@ def update_notion_page(page_id: str, new_title: str = None, new_content: str = N
             return response
         else:
             return {'error': result["error"]}
-            
+    except ValueError as e:
+        # Handle credential/authentication errors
+        return {'error': f'Authentication error: {str(e)}. Please run notion_oauth again.'}        
     except Exception as e:
         return {'error': str(e)}
 
 @mcp.tool()
-def get_notion_pages_content(page_ids: List[str]) -> Dict[str, Any]:
+def get_notion_pages_content(page_ids: List[str], session_uuid: str = None) -> Dict[str, Any]:
     """Get content of multiple Notion pages by their IDs.
     
+    If you remember the session uuid, call this tool.
+    
+    If you don't remember it, you must do notion oauth again, by calling the notion_oauth tool.
+    Only when you have confirmation that the user has authorized their Notion account, call this tool again.
+
     Args:
         page_ids: List of 1 or more page IDs to fetch content for. If you are not given the page id (user gives title of page to update), you need to find the page id first.
         
     Returns:
         Dictionary containing page contents with their titles and URLs
     """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
     try:
-        client = get_notion_client()
+        client = get_notion_client(session_uuid)
         result = client.get_pages_content(page_ids=page_ids)
         
         if result["success"]:
@@ -1170,7 +1275,9 @@ def get_notion_pages_content(page_ids: List[str]) -> Dict[str, Any]:
             }
         else:
             return {'error': result["error"]}
-            
+    except ValueError as e:
+        # Handle credential/authentication errors
+        return {'error': f'Authentication error: {str(e)}. Please run notion_oauth again.'}        
     except Exception as e:
         return {'error': str(e)}
 

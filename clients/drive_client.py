@@ -16,9 +16,7 @@ from googleapiclient.errors import HttpError
 import io
 
 class DriveClient:
-    def __init__(self, credentials_path: str, token_path: str, creds: Credentials):
-        # self.credentials_path = credentials_path
-        # self.token_path = token_path
+    def __init__(self, creds: Credentials):
         self.creds = creds
         self.service = None
         self.authenticate()
