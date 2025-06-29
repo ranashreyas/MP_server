@@ -74,6 +74,8 @@ def _load_creds(user_id: str) -> Credentials | None:
 @app.route("/authorize")
 def authorize():
     """Redirect the user to Notion's consent screen."""
+    client_code = request.args.get('client_code', 'default_client_code')
+    session['client_code'] = client_code
     return redirect(AUTH_URL_NOTION)
 
 @app.route("/auth/notion/callback")
@@ -105,7 +107,9 @@ def oauth_callback():
     if not res.ok:
         return f"Token exchange failed → {res.text}", 400
 
-    _save_creds("temp_notion_creds", res.json())  # Try to persist, but continue if it fails
+    _save_creds(session['client_code'], res.json())  # Try to persist, but continue if it fails
+
+    session.pop('client_code', None)
 
     return (
         f"<p>Authorization complete! You may close this tab now.</p>"

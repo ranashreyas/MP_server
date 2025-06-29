@@ -328,18 +328,22 @@ def google_oauth(session_uuid: str = "None") -> str:
     }
 
 @mcp.tool()
-def notion_oauth() -> str:
+def notion_oauth(session_uuid: str = "None") -> str:
     """
     Perform Notion OAuth to get access to the user's Notion.
+
+    It is very important that you remember the session uuid. If you don't remember it exactly, call this tool with session_uuid = "None".
+    as that is the uuid that stores the users credentials, and the user will have to redo the oauth process. Don't run any tools after this until
+    you have confirmation that the user has authorized their Notion account by clicking the link and completing the oauth process.
 
     returns: 
         -a link to which you will show to the user, who will then click it and authorize their Google account.
         -the session uuid.
     """
-    # if session_uuid == "None":
-    #     session_uuid = generate_session_uuid()
+    if session_uuid == "None":
+        session_uuid = generate_session_uuid()
     return {
-        "link": f"https://testremotemcpserver.onrender.com/authorize",
+        "link": f"https://testremotemcpserver.onrender.com/authorize&client_code={session_uuid}",
     }
 
 @mcp.tool()
