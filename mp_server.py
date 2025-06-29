@@ -328,6 +328,21 @@ def google_oauth(session_uuid: str = "None") -> str:
     }
 
 @mcp.tool()
+def notion_oauth() -> str:
+    """
+    Perform Notion OAuth to get access to the user's Notion.
+
+    returns: 
+        -a link to which you will show to the user, who will then click it and authorize their Google account.
+        -the session uuid.
+    """
+    # if session_uuid == "None":
+    #     session_uuid = generate_session_uuid()
+    return {
+        "link": f"https://testremotemcpserver.onrender.com/authorize",
+    }
+
+@mcp.tool()
 def get_unread_emails(max_results: int = 75, session_uuid: str = None) -> Dict[str, Any]:
     """
     Get unread emails from Gmail inbox.
