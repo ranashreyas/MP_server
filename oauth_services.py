@@ -206,8 +206,8 @@ def google_callback():
     except Exception as e:
         return f"Error in OAuth callback: {str(e)}", 500
     
-@app.route('/creds')
-def get_creds():
+@app.route('/creds-google')
+def get_creds_google():
     """
     Get credentials from a pickle file with hash authentication
     Args:
@@ -264,6 +264,94 @@ def get_creds():
                     "scopes": creds.scopes
                 }
             })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"No credentials found for {filename}"
+            }), 404
+    except Exception as e:
+        return jsonify({
+            "status": "error", 
+            "message": str(e)
+        }), 500
+
+@app.route('/creds-notion')
+def get_creds_notion():
+    """
+    Get Notion credentials from a pickle file with hash authentication
+    Args:
+        filename: Name of the pickle file (without .pickle extension)
+    Query Parameters:
+        hash: SHA256 hash of the secret value for authentication
+    """
+    try:
+        # Get the hash parameter from query string
+        provided_hash = request.args.get('hash')
+        filename = request.args.get('filename')
+        
+        if not provided_hash:
+            return jsonify({
+                "status": "error",
+                "message": "Hash parameter is required"
+            }), 400
+            
+        if not filename:
+            return jsonify({
+                "status": "error",
+                "message": "Filename parameter is required"
+            }), 400
+        
+        # Get the secret from environment variables
+        env_secret = os.environ.get('ENV_SECRET')
+        if not env_secret:
+            return jsonify({
+                "status": "error",
+                "message": "Server configuration error"
+            }), 500
+        
+        # Compute hash of the environment secret
+        expected_hash = hashlib.sha256(env_secret.encode()).hexdigest()
+        
+        # Compare hashes
+        if provided_hash != expected_hash:
+            return jsonify({
+                "status": "error",
+                "message": "Invalid hash"
+            }), 403
+        
+        # If hashes match, proceed to get credentials
+        creds = _load_creds(filename)
+        if creds:
+            # For Notion credentials, creds is a dict, not a Credentials object
+            if isinstance(creds, dict):
+                return jsonify({
+                    "access_token": creds.get("access_token", ""),
+                    "token_type": "bearer",
+                    "bot_id": creds.get("bot_id", ""),
+                    "workspace_name": creds.get("workspace_name", ""),
+                    "workspace_icon": creds.get("workspace_icon"),
+                    "workspace_id": creds.get("workspace_id", ""),
+                    "owner": creds.get("owner", {
+                        "type": "user",
+                        "user": {
+                            "object": "user",
+                            "id": "",
+                            "name": "",
+                            "avatar_url": "",
+                            "type": "person",
+                            "person": {
+                                "email": ""
+                            }
+                        }
+                    }),
+                    "duplicated_template_id": creds.get("duplicated_template_id"),
+                    "request_id": creds.get("request_id", "")
+                })
+            else:
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid credential format for Notion"
+                }), 500
         else:
             return jsonify({
                 "status": "error",

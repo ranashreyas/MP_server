@@ -61,7 +61,7 @@ def pullGoogleCreds(session_uuid: str):
         
         # Make request with hash parameter
         response = requests.get(
-            "https://testremotemcpserver.onrender.com/creds",
+            "https://testremotemcpserver.onrender.com/creds-google",
             params={"hash": secret_hash, "filename": session_uuid},
             timeout=30  # Add timeout
         )
@@ -121,7 +121,7 @@ def pullNotionCreds(session_uuid: str):
         
         # Make request with hash parameter
         response = requests.get(
-            "https://testremotemcpserver.onrender.com/creds",
+            "https://testremotemcpserver.onrender.com/creds-notion",
             params={"hash": secret_hash, "filename": session_uuid},
             timeout=30  # Add timeout
         )
@@ -407,7 +407,7 @@ def notion_oauth(session_uuid: str = "None") -> str:
     if session_uuid == "None":
         session_uuid = generate_session_uuid()
     return {
-        "link": f"https://testremotemcpserver.onrender.com/authorize&client_code={session_uuid}",
+        "link": f"https://testremotemcpserver.onrender.com/authorize?client_code={session_uuid}",
     }
 
 @mcp.tool()

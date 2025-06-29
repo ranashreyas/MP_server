@@ -16,7 +16,7 @@ class NotionClient:
     def __init__(self, creds: Dict[str, Any]):
         self.creds = creds
         self.service = None
-        self.NOTION_API_VERSION = "2022-06-28"
+        self.NOTION_API_VERSION = "2022-06-28"        
         self.authenticate()
     
     def authenticate(self):
@@ -160,7 +160,7 @@ class NotionClient:
                 parent_page_id = self.find_page_by_title(parent_page_title)
                 if parent_page_id:
                     parent = {"type": "page_id", "page_id": parent_page_id}
-                else:
+            else:
                     # If parent not found, still create as top-level but note in response
                     pass
             
