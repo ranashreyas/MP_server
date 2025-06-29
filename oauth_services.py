@@ -16,7 +16,7 @@ import hashlib
 
 # Initialize Flask app
 app = Flask(__name__)
-
+app.secret_key = os.environ.get('ENV_SECRET', 'your-secret-key-change-this-in-production')
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 ########################################################
