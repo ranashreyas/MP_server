@@ -56,15 +56,20 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
     
-TOKEN_DIR = Path(SCRIPT_DIR) / 'Pickles'
-TOKEN_DIR.mkdir(exist_ok=True)
+PICKLES_DIR = Path(SCRIPT_DIR) / 'Pickles'
+PICKLES_DIR.mkdir(exist_ok=True)
 
-def _save_creds(user_id: str, creds: Credentials):
-    with open(TOKEN_DIR / f"{user_id}.pickle", "wb") as f:
+def _save_creds(user_id: str, creds: Credentials, service: str):
+    TOKEN_DIR = Path(PICKLES_DIR) / user_id
+    TOKEN_DIR.mkdir(exist_ok=True)
+
+    with open(TOKEN_DIR / f"{service}.pickle", "wb") as f:
         pickle.dump(creds, f)
 
-def _load_creds(user_id: str) -> Credentials | None:
-    path = TOKEN_DIR / f"{user_id}.pickle"
+def _load_creds(user_id: str, service: str) -> Credentials | None:
+    TOKEN_DIR = Path(PICKLES_DIR) / user_id
+
+    path = TOKEN_DIR / f"{service}.pickle"
     if path.exists():
         with open(path, "rb") as f:
             return pickle.load(f)
@@ -107,7 +112,7 @@ def oauth_callback():
     if not res.ok:
         return f"Token exchange failed → {res.text}", 400
 
-    _save_creds(session['client_code'], res.json())  # Try to persist, but continue if it fails
+    _save_creds(session['client_code'], res.json(), "notion")  # Try to persist, but continue if it fails
 
     session.pop('client_code', None)
 
@@ -187,7 +192,7 @@ def google_callback():
         # unique_id = gmail.users().getProfile(userId="me").execute()["emailAddress"] 
         unique_id = session['client_code']
 
-        _save_creds(unique_id, creds)
+        _save_creds(unique_id, creds, "google")
         
         # Clear session
         session.pop('oauth_state', None)
@@ -251,7 +256,7 @@ def get_creds_google():
             }), 403
         
         # If hashes match, proceed to get credentials
-        creds = _load_creds(filename)
+        creds = _load_creds(filename, "google")
         if creds:
             return jsonify({
                 "status": "success",
@@ -320,7 +325,7 @@ def get_creds_notion():
             }), 403
         
         # If hashes match, proceed to get credentials
-        creds = _load_creds(filename)
+        creds = _load_creds(filename, "notion")
         if creds:
             # For Notion credentials, creds is a dict, not a Credentials object
             if isinstance(creds, dict):
@@ -371,18 +376,41 @@ def health_check():
 
 @app.route('/pickles')
 def list_pickle_files():
-    """List all pickle files in the Pickles directory"""
+    """List all pickle files in the new hierarchical Pickles directory structure"""
     try:
-        pickle_files = []
-        if TOKEN_DIR.exists():
-            for file in TOKEN_DIR.iterdir():
-                if file.is_file() and file.suffix == '.pickle':
-                    pickle_files.append(file.name)
+        users_data = {}
+        total_files = 0
+        
+        if PICKLES_DIR.exists():
+            # Iterate through user directories
+            for user_dir in PICKLES_DIR.iterdir():
+                if user_dir.is_dir():
+                    user_id = user_dir.name
+                    user_files = []
+                    
+                    # List all pickle files for this user
+                    for file in user_dir.iterdir():
+                        if file.is_file() and file.suffix == '.pickle':
+                            service_name = file.stem  # filename without extension
+                            user_files.append({
+                                "service": service_name,
+                                "filename": file.name,
+                                "path": str(file.relative_to(PICKLES_DIR))
+                            })
+                            total_files += 1
+                    
+                    if user_files:  # Only include users who have credential files
+                        users_data[user_id] = {
+                            "services": user_files,
+                            "service_count": len(user_files)
+                        }
         
         return jsonify({
-            "pickle_files": pickle_files,
-            "count": len(pickle_files),
-            "directory": str(TOKEN_DIR)
+            "users": users_data,
+            "total_users": len(users_data),
+            "total_files": total_files,
+            "directory": str(PICKLES_DIR),
+            "structure": "Pickles/{user_id}/{service}.pickle"
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
