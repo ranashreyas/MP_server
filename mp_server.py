@@ -151,7 +151,6 @@ def pullNotionCreds(session_uuid: str):
         return f"Error making request: {str(e)}"
     except Exception as e:
         return f"Unexpected error: {str(e)}"
-        
 
 def get_gmail_client(session_uuid: str):
     
@@ -376,7 +375,7 @@ def google_oauth(session_uuid: str = "None") -> str:
     """
     Perform Google OAuth to get access to the user's Gmail.
     
-    It is very important that you remember the session uuid. If you don't remember it exactly, call this tool with session_uuid = "None".
+    It is very important that you remember the session uuid. The Google and Notion session ids must be the same. If you don't remember it exactly, call this tool with session_uuid = "None".
     as that is the uuid that stores the users credentials, and the user will have to redo the oauth process. Don't run any tools after this until
     you have confirmation that the user has authorized their Google account by clicking the link and completing the oauth process.
 
@@ -396,7 +395,7 @@ def notion_oauth(session_uuid: str = "None") -> str:
     """
     Perform Notion OAuth to get access to the user's Notion.
 
-    It is very important that you remember the session uuid. If you don't remember it exactly, call this tool with session_uuid = "None".
+    It is very important that you remember the session uuid. The Google and Notion session ids must be the same. If you don't remember it exactly, call this tool with session_uuid = "None".
     as that is the uuid that stores the users credentials, and the user will have to redo the oauth process. Don't run any tools after this until
     you have confirmation that the user has authorized their Notion account by clicking the link and completing the oauth process.
 
