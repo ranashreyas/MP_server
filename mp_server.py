@@ -159,10 +159,10 @@ def get_gmail_client(session_uuid: str):
     
     # Handle error cases
     if isinstance(creds_data, str):
-        raise ValueError(f"Failed to get credentials: {creds_data}")
+        return f"Failed to get credentials: {creds_data}"
     
     if not isinstance(creds_data, dict):
-        raise ValueError(f"Invalid credentials format: expected dict, got {type(creds_data)}")
+        return f"Invalid credentials format: expected dict, got {type(creds_data)}"
     
     # Convert dict to Google Credentials object
     from google.oauth2.credentials import Credentials
@@ -181,10 +181,10 @@ def get_gmail_client(session_uuid: str):
                 'token': token, 'client_id': client_id, 
                 'client_secret': client_secret, 'token_uri': token_uri
             }.items() if not v]
-            raise ValueError(f"Missing required credential fields: {missing}")
+            return f"Missing required credential fields: {missing}"
         
         if not scopes or not isinstance(scopes, list):
-            raise ValueError("Scopes must be a non-empty list")
+            return "Scopes must be a non-empty list"
         
         credentials = Credentials(
             token=token,
@@ -197,10 +197,10 @@ def get_gmail_client(session_uuid: str):
         
         # Validate the credentials object was created successfully
         if not hasattr(credentials, 'token') or not credentials.token:
-            raise ValueError("Failed to create valid credentials object")
+            return "Failed to create valid credentials object"
         
     except Exception as e:
-        raise ValueError(f"Failed to create credentials object: {e}")
+        return f"Failed to create credentials object: {e}"
     
     gmail_client = GmailClient(credentials)
     
@@ -212,10 +212,10 @@ def get_calendar_client(session_uuid: str):
     
     # Handle error cases
     if isinstance(creds_data, str):
-        raise ValueError(f"Failed to get credentials: {creds_data}")
+        return f"Failed to get credentials: {creds_data}"
     
     if not isinstance(creds_data, dict):
-        raise ValueError(f"Invalid credentials format: expected dict, got {type(creds_data)}")
+        return f"Invalid credentials format: expected dict, got {type(creds_data)}"
     
     # Convert dict to Google Credentials object
     from google.oauth2.credentials import Credentials
@@ -234,10 +234,10 @@ def get_calendar_client(session_uuid: str):
                 'token': token, 'client_id': client_id, 
                 'client_secret': client_secret, 'token_uri': token_uri
             }.items() if not v]
-            raise ValueError(f"Missing required credential fields: {missing}")
+            return f"Missing required credential fields: {missing}"
         
         if not scopes or not isinstance(scopes, list):
-            raise ValueError("Scopes must be a non-empty list")
+            return "Scopes must be a non-empty list"
         
         # Ensure Calendar scopes are present
         required_scopes = [
@@ -246,7 +246,7 @@ def get_calendar_client(session_uuid: str):
         ]
         missing_scopes = [scope for scope in required_scopes if scope not in scopes]
         if missing_scopes:
-            raise ValueError(f"Missing required Calendar scopes: {missing_scopes}")
+            return f"Missing required Calendar scopes: {missing_scopes}"
         
         credentials = Credentials(
             token=token,
@@ -259,10 +259,10 @@ def get_calendar_client(session_uuid: str):
         
         # Validate the credentials object was created successfully
         if not hasattr(credentials, 'token') or not credentials.token:
-            raise ValueError("Failed to create valid credentials object")
+            return "Failed to create valid credentials object"
         
     except Exception as e:
-        raise ValueError(f"Failed to create credentials object: {e}")
+        return f"Failed to create credentials object: {e}"
     
     calendar_client = CalendarClient(credentials)
     
@@ -274,10 +274,10 @@ def get_drive_client(session_uuid: str):
     
     # Handle error cases
     if isinstance(creds_data, str):
-        raise ValueError(f"Failed to get credentials: {creds_data}")
+        return f"Failed to get credentials: {creds_data}"
     
     if not isinstance(creds_data, dict):
-        raise ValueError(f"Invalid credentials format: expected dict, got {type(creds_data)}")
+        return f"Invalid credentials format: expected dict, got {type(creds_data)}"
     
     # Convert dict to Google Credentials object
     from google.oauth2.credentials import Credentials
@@ -296,10 +296,10 @@ def get_drive_client(session_uuid: str):
                 'token': token, 'client_id': client_id, 
                 'client_secret': client_secret, 'token_uri': token_uri
             }.items() if not v]
-            raise ValueError(f"Missing required credential fields: {missing}")
+            return f"Missing required credential fields: {missing}"
         
         if not scopes or not isinstance(scopes, list):
-            raise ValueError("Scopes must be a non-empty list")
+            return "Scopes must be a non-empty list"
         
         # Ensure Drive scopes are present
         required_scopes = [
@@ -308,7 +308,7 @@ def get_drive_client(session_uuid: str):
         ]
         missing_scopes = [scope for scope in required_scopes if scope not in scopes]
         if missing_scopes:
-            raise ValueError(f"Missing required Drive scopes: {missing_scopes}")
+            return f"Missing required Drive scopes: {missing_scopes}"
         
         credentials = Credentials(
             token=token,
@@ -321,10 +321,10 @@ def get_drive_client(session_uuid: str):
         
         # Validate the credentials object was created successfully
         if not hasattr(credentials, 'token') or not credentials.token:
-            raise ValueError("Failed to create valid credentials object")
+            return "Failed to create valid credentials object"
         
     except Exception as e:
-        raise ValueError(f"Failed to create credentials object: {e}")
+        return f"Failed to create credentials object: {e}"
     
     drive_client = DriveClient(credentials)
     
@@ -336,16 +336,16 @@ def get_notion_client(session_uuid: str):
     
     # Handle error cases
     if isinstance(creds_data, str):
-        raise ValueError(f"Failed to get credentials: {creds_data}")
+        return f"Failed to get credentials: {creds_data}"
     
     if not isinstance(creds_data, dict):
-        raise ValueError(f"Invalid credentials format: expected dict, got {type(creds_data)}")
+        return f"Invalid credentials format: expected dict, got {type(creds_data)}"
     
     # Validate required fields
     required_fields = ['access_token']
     missing_fields = [field for field in required_fields if not creds_data.get(field)]
     if missing_fields:
-        raise ValueError(f"Missing required credential fields: {missing_fields}")
+        return f"Missing required credential fields: {missing_fields}"
     
     notion_client = NotionClient(creds_data)
     
@@ -431,6 +431,12 @@ def get_unread_emails(max_results: int = 75, session_uuid: str = None) -> Dict[s
     
     try:
         client = get_gmail_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         messages = client.get_messages('is:unread', max_results)
         
         insights = []
@@ -475,7 +481,12 @@ def get_important_missed_emails(days_back: int = 7, importance_threshold: int = 
     
     try:
         client = get_gmail_client(session_uuid)
-        
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         # Query for recent unread emails
         query = f'is:unread newer_than:{days_back}d'
         messages = client.get_messages(query, 50)
@@ -524,7 +535,12 @@ def get_email_summary_by_sender(days_back: int = 30, session_uuid: str = None) -
     
     try:
         client = get_gmail_client(session_uuid)
-        
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         query = f'newer_than:{days_back}d'
         messages = client.get_messages(query, 100)
         
@@ -594,6 +610,12 @@ def search_emails(query: str, max_results: int = 20, session_uuid: str = None) -
     
     try:
         client = get_gmail_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         messages = client.get_messages(query, max_results)
         
         results = []
@@ -637,7 +659,12 @@ def get_weekly_email_insights(session_uuid: str = None) -> Dict[str, Any]:
     
     try:
         client = get_gmail_client(session_uuid)
-        
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         # Get emails from last 7 days
         messages = client.get_messages('newer_than:7d', 100)
         
@@ -740,6 +767,13 @@ def list_calendars(session_uuid: str = None) -> Dict[str, Any]:
     
     try:
         calendar_client = get_calendar_client(session_uuid)
+        if isinstance(calendar_client, str):
+            return {
+                'error': calendar_client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
+        
         calendars = calendar_client.list_calendars()
         
         return {
@@ -769,6 +803,12 @@ def get_upcoming_events(calendar_id: str = 'primary', days_ahead: int = 7, max_r
     
     try:
         calendar_client = get_calendar_client(session_uuid)
+        if isinstance(calendar_client, str):
+            return {
+                'error': calendar_client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         
         time_min = datetime.now()
         time_max = time_min + timedelta(days=days_ahead)
@@ -820,6 +860,12 @@ def create_calendar_event(calendar_id: str, title: str, description: str,
     
     try:
         calendar_client = get_calendar_client(session_uuid)
+        if isinstance(calendar_client, str):
+            return {
+                'error': calendar_client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         
         # Parse datetime strings
         start_time = datetime.fromisoformat(start_datetime)
@@ -852,6 +898,12 @@ def update_calendar_event(calendar_id: str, event_id: str,
     
     try:
         calendar_client = get_calendar_client(session_uuid)
+        if isinstance(calendar_client, str):
+            return {
+                'error': calendar_client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         
         # Parse datetime strings if provided
         start_time = datetime.fromisoformat(start_datetime) if start_datetime else None
@@ -882,6 +934,12 @@ def delete_calendar_event(calendar_id: str, event_id: str, session_uuid: str = N
     
     try:
         calendar_client = get_calendar_client(session_uuid)
+        if isinstance(calendar_client, str):
+            return {
+                'error': calendar_client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = calendar_client.delete_event(calendar_id, event_id)
         return result
     except ValueError as e:
@@ -898,6 +956,12 @@ def search_calendar_events(calendar_id: str = 'primary', query: str = '',
     
     try:
         calendar_client = get_calendar_client(session_uuid)
+        if isinstance(calendar_client, str):
+            return {
+                'error': calendar_client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         
         time_min = datetime.now() - timedelta(days=days_back)
         time_max = datetime.now() + timedelta(days=days_ahead)
@@ -944,6 +1008,12 @@ def check_availability(calendar_ids: List[str], start_datetime: str, end_datetim
     
     try:
         calendar_client = get_calendar_client(session_uuid)
+        if isinstance(calendar_client, str):
+            return {
+                'error': calendar_client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         
         start_time = datetime.fromisoformat(start_datetime)
         end_time = datetime.fromisoformat(end_datetime)
@@ -990,6 +1060,12 @@ def get_today_agenda(calendar_id: str = 'primary', session_uuid: str = None) -> 
     
     try:
         calendar_client = get_calendar_client(session_uuid)
+        if isinstance(calendar_client, str):
+            return {
+                'error': calendar_client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         
         # Get today's events
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1026,6 +1102,12 @@ def get_weekly_calendar_summary(calendar_id: str = 'primary', session_uuid: str 
     
     try:
         calendar_client = get_calendar_client(session_uuid)
+        if isinstance(calendar_client, str):
+            return {
+                'error': calendar_client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         
         # Get this week's events
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1083,6 +1165,12 @@ def get_notion_pages(top_level_only: bool = False, max_results: int = 100, sessi
     
     try:
         client = get_notion_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': notion_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = client.get_all_pages(top_level_only=top_level_only, page_size=max_results)
         
         if result["success"]:
@@ -1150,6 +1238,12 @@ def create_notion_page(title: str = None, parent_page_title: str = None, body_co
     
     try:
         client = get_notion_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': notion_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         if body_content:
             body_content = body_content.replace("[ ]", "[]")
         result = client.create_page(title=title, parent_page_title=parent_page_title, body_content=body_content)
@@ -1202,6 +1296,12 @@ def update_notion_page(page_id: str, new_title: str = None, new_content: str = N
     
     try:
         client = get_notion_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': notion_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         if new_content:
             new_content = new_content.replace("[ ]", "[]")
         result = client.update_page(
@@ -1266,6 +1366,12 @@ def get_notion_pages_content(page_ids: List[str], session_uuid: str = None) -> D
     
     try:
         client = get_notion_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': notion_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = client.get_pages_content(page_ids=page_ids)
         
         if result["success"]:
@@ -1311,6 +1417,12 @@ def list_drive_files(query: str = None, max_results: int = 100, session_uuid: st
     
     try:
         client = get_drive_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = client.list_files(query=query, page_size=max_results)
         
         if result["success"]:
@@ -1357,6 +1469,12 @@ def search_drive_files(query: str, max_results: int = 100, session_uuid: str = N
     
     try:
         client = get_drive_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = client.search_files(query=query, page_size=max_results)
         
         if result["success"]:
@@ -1397,6 +1515,12 @@ def download_drive_file(file_id: str, output_path: str, session_uuid: str = None
     
     try:
         client = get_drive_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = client.download_file(file_id=file_id, output_path=output_path)
         
         if result["success"]:
@@ -1438,6 +1562,12 @@ def get_drive_file_metadata(file_id: str, session_uuid: str = None) -> Dict[str,
     
     try:
         client = get_drive_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = client.get_file_metadata(file_id=file_id)
         
         if result["success"]:
@@ -1479,6 +1609,12 @@ def list_shared_drive_files(max_results: int = 100, session_uuid: str = None) ->
     
     try:
         client = get_drive_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = client.list_shared_files(page_size=max_results)
         
         if result["success"]:
@@ -1525,6 +1661,12 @@ def get_drive_file_activity(file_id: str, max_results: int = 100, session_uuid: 
     
     try:
         client = get_drive_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = client.get_file_activity(file_id=file_id, max_results=max_results)
         
         if result["success"]:
@@ -1568,6 +1710,12 @@ def get_recent_drive_activity(max_results: int = 100, session_uuid: str = None) 
     
     try:
         client = get_drive_client(session_uuid)
+        if isinstance(client, str):
+            return {
+                'error': client,
+                'link': google_oauth(session_uuid),
+                'session_uuid': session_uuid
+            }
         result = client.get_recent_activity(max_results=max_results)
         
         if result["success"]:
