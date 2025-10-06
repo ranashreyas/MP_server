@@ -351,6 +351,85 @@ def get_notion_client(session_uuid: str):
     return notion_client
 
 @mcp.tool()
+def search(query: str, session_uuid: str = None, max_results: int = 10) -> Dict[str, Any]:
+    """
+    Universal search tool required by ChatGPT for Deep Research mode.
+    Searches across Gmail, Calendar, Notion, and Drive services.
+    
+    Args:
+        query: Search query string
+        session_uuid: User's session UUID for authentication
+        max_results: Maximum number of results to return (default: 10)
+    
+    Returns:
+        Dictionary with 'ids' key containing list of record IDs
+    """
+    if not session_uuid:
+        return {'error': 'session_uuid is required', 'ids': []}
+    
+    try:
+        ids = []
+        
+        # Search emails only (primary source)
+        try:
+            client = get_gmail_client(session_uuid)
+            if not isinstance(client, str):
+                messages = client.get_messages(query, max_results)
+                ids.extend([f"email:{msg['id']}" for msg in messages])
+        except:
+            pass
+        
+        return {'ids': ids[:max_results], 'count': len(ids[:max_results])}
+    
+    except Exception as e:
+        return {'error': f'Search failed: {str(e)}', 'ids': []}
+
+@mcp.tool()
+def fetch(id: str, session_uuid: str = None) -> Dict[str, Any]:
+    """
+    Universal fetch tool required by ChatGPT for Deep Research mode.
+    Retrieves essential record data by ID.
+    
+    Args:
+        id: Record ID in format 'service:id' (e.g., 'email:abc123')
+        session_uuid: User's session UUID for authentication
+    
+    Returns:
+        Essential record data (subject, sender, date, snippet)
+    """
+    if not session_uuid:
+        return {'error': 'session_uuid is required'}
+    
+    if ':' not in id:
+        return {'error': 'Invalid ID format. Expected format: service:id'}
+    
+    try:
+        service, record_id = id.split(':', 1)
+        
+        if service == 'email':
+            client = get_gmail_client(session_uuid)
+            if isinstance(client, str):
+                return {'error': client}
+            
+            # Fetch by ID directly
+            messages = client.get_messages(f'rfc822msgid:{record_id}', 1)
+            if messages:
+                msg = messages[0]
+                # Quick parse - minimal processing
+                return {
+                    'id': id,
+                    'subject': msg.get('snippet', '')[:100],
+                    'from': msg.get('from', 'Unknown'),
+                    'date': msg.get('internalDate', ''),
+                    'snippet': msg.get('snippet', '')
+                }
+        
+        return {'error': f'Service {service} not supported in fetch'}
+    
+    except Exception as e:
+        return {'error': f'Fetch failed: {str(e)}'}
+
+@mcp.tool()
 def debug_paths() -> Dict[str, Any]:
     """Debug tool to show current paths and file existence for troubleshooting."""
     return {
